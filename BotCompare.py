@@ -388,13 +388,14 @@ def bot_compare():
 <script>
 (function() {
   var S = 230;
+  var dark = document.body.classList.contains('dark');
   var tip = document.getElementById('tip');
   function draw(id, col, xcol, color) {
     var canvas = document.getElementById(id);
     var ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = dark ? '#1e1e1e' : '#fff';
     ctx.fillRect(0, 0, S + 1, S + 1);
-    ctx.fillStyle = '#7f7f7f';
+    ctx.fillStyle = dark ? '#555' : '#7f7f7f';
     ctx.fillRect(0, 115, S + 1, 1);
     var rows = document.querySelectorAll('table')[1].querySelectorAll('tr');
     var names = {};
@@ -424,8 +425,8 @@ def bot_compare():
     };
     canvas.onmouseleave = function() { tip.style.display = 'none'; };
   }
-  draw('diffAPS', 7, 9, 'rgba(204,37,41,0.4)');
-  draw('diffSurvival', 8, 10, 'rgba(62,150,81,0.4)');
+  draw('diffAPS', 7, 9, dark ? 'rgba(255,100,100,0.5)' : 'rgba(204,37,41,0.4)');
+  draw('diffSurvival', 8, 10, dark ? 'rgba(100,220,130,0.5)' : 'rgba(62,150,81,0.4)');
 })();
 </script>""")
     out.append("</body></html>")

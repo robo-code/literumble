@@ -353,13 +353,14 @@ def bot_details():
 <script>
 (function() {
   var S = 230;
+  var dark = document.body.classList.contains('dark');
   var tip = document.getElementById('tip');
   function draw(id, col, xcol, color, offset) {
     var canvas = document.getElementById(id);
     var ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = dark ? '#1e1e1e' : '#fff';
     ctx.fillRect(0, 0, S + 1, S + 1);
-    ctx.fillStyle = '#7f7f7f';
+    ctx.fillStyle = dark ? '#555' : '#7f7f7f';
     ctx.fillRect(0, 115, S + 1, 1);
     var rows = document.querySelectorAll('table')[1].querySelectorAll('tr');
     var names = {};
@@ -389,9 +390,9 @@ def bot_details():
     };
     canvas.onmouseleave = function() { tip.style.display = 'none'; };
   }
-  draw('distAPS', 4, 11, 'rgba(204,37,41,0.4)', 0);
-  draw('distSurvival', 7, 12, 'rgba(62,150,81,0.4)', 0);
-  draw('distKNNPBI', 8, 11, 'rgba(57,106,177,0.4)', 50);
+  draw('distAPS', 4, 11, dark ? 'rgba(255,100,100,0.5)' : 'rgba(204,37,41,0.4)', 0);
+  draw('distSurvival', 7, 12, dark ? 'rgba(100,220,130,0.5)' : 'rgba(62,150,81,0.4)', 0);
+  draw('distKNNPBI', 8, 11, dark ? 'rgba(120,160,255,0.5)' : 'rgba(57,106,177,0.4)', 50);
 })();
 </script>""")
     out.append("</body></html>")
