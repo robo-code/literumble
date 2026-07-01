@@ -87,6 +87,7 @@ def rumble_stats():
                 rumbles[0].append(r)
 
         for cat, rumbs in zip(categories, rumbles):
+            entries_by_id = {}
             for r in rumbs:
                 scores = load_blob(r.ParticipantsScores, {})
                 if not isinstance(scores, dict):
@@ -100,8 +101,8 @@ def rumble_stats():
                             latest = t
                     r.LastUpload = latest
 
-                r.__dict__["entries"] = entries
-            rumbs.sort(key=lambda r: -r.__dict__["entries"])
+                entries_by_id[id(r)] = entries
+            rumbs.sort(key=lambda r: -entries_by_id[id(r)])
 
             out.append("<table class=\"rumble\">\n<tr>")
             out.append("<th>" + cat + "</th>\n<th>Participants</th>\n<th>Total Uploads</th>\n<th>Last Upload</th></tr>")
@@ -111,7 +112,7 @@ def rumble_stats():
                 gameHref = "<a href=\"Rankings?game=" + game + extraArgs + "\" ><b>" + game + "</b></a>"
 
                 lastTimeSince = timeSince(r.LastUpload) + " ago"
-                out.append("\n<tr>\n<td>" + gameHref + "</td>\n<th>" + str(r.__dict__["entries"]) + "</th>\n<th>")
+                out.append("\n<tr>\n<td>" + gameHref + "</td>\n<th>" + str(entries_by_id[id(r)]) + "</th>\n<th>")
                 out.append(str(r.TotalUploads) + "</th><th>" + lastTimeSince + "</th>\n</tr>")
                 uploaders = load_blob(r.Uploaders, {})
                 if not isinstance(uploaders, dict) or len(uploaders) == 0:

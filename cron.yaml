@@ -27,5 +27,5 @@ cron:
 
 - description: refresh stats page (dark)
   url: /RumbleStats?regen=1&theme=dark
-  schedule: every 10 minutes synchronized
+  schedule: every 10 minutes from 00:05 to 23:55
   target: default

@@ -41,7 +41,10 @@ BLOCKED_USER_AGENTS = (
 def block_scrapers():
     ua = (request.headers.get("User-Agent") or "").lower()
     if any(bot in ua for bot in BLOCKED_USER_AGENTS):
-        abort(403)
+        abort(410)
+    # BotCompare is O(n^2) and disallowed in robots.txt
+    if request.path == "/BotCompare" and "bot" in ua:
+        abort(410)
 
 
 app.add_url_rule("/", view_func=RumbleSelect.rumble_select, methods=["GET"])
