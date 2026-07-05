@@ -2,6 +2,9 @@ runtime: python311
 app_engine_apis: true
 entrypoint: gunicorn -b :$PORT --workers 1 --threads 8 --timeout 60 main:app
 
+env_variables:
+  REDIRECT_TO: https://rumble.robowiki.net
+
 instance_class: F1
 automatic_scaling:
   max_instances: 1

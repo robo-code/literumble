@@ -1,4 +1,8 @@
-from flask import Flask, abort, request
+import os
+import urllib.error
+import urllib.request
+
+from flask import Flask, abort, redirect, request
 from flask_compress import Compress
 from google.appengine.api import wrap_wsgi_app
 
@@ -20,6 +24,35 @@ app = Flask(__name__)
 app.wsgi_app = wrap_wsgi_app(app.wsgi_app)
 
 Compress(app)
+
+# On App Engine (REDIRECT_TO set in app.yaml) send everything to the new host.
+# POST uploads can't follow a 302 (Java HttpURLConnection won't redirect POST),
+# so those paths are proxied through to the new host instead.
+_REDIRECT_TO = os.environ.get("REDIRECT_TO")
+_PROXY_PATHS = {"/UploadedResults", "/RemoveOldParticipant"}
+
+
+@app.before_request
+def redirect_or_proxy():
+    if not _REDIRECT_TO:
+        return None
+    target = _REDIRECT_TO + request.path
+    if request.query_string:
+        target += "?" + request.query_string.decode()
+    if request.path not in _PROXY_PATHS:
+        return redirect(target, code=302)
+    headers = {}
+    if request.content_type:
+        headers["Content-Type"] = request.content_type
+    req = urllib.request.Request(
+        target, data=request.get_data(), method=request.method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read(), r.status, {"Content-Type": r.headers.get_content_type()}
+    except urllib.error.HTTPError as e:
+        return e.read(), e.code
+    except urllib.error.URLError:
+        return b"upstream unavailable", 502
 
 BLOCKED_USER_AGENTS = (
     "meta-externalagent",
