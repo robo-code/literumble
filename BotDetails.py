@@ -301,7 +301,7 @@ def bot_details():
 
             botName = b.Name
             botNameHref = "<a href=\"BotDetails?game=" + game + "&amp;name=" + botName.replace(" ", "%20") + extraArgs + "\">" + botName + " </a>"
-            compareHref = "<a href=\"BotCompare?game=" + game + "&amp;bota=" + name.replace(" ", "%20") + "&amp;botb=" + botName.replace(" ", "%20") + extraArgs + "\">compare</a>"
+            compareHref = "<a rel=\"nofollow\" href=\"BotCompare?game=" + game + "&amp;bota=" + name.replace(" ", "%20") + "&amp;botb=" + botName.replace(" ", "%20") + extraArgs + "\">compare</a>"
             ft = []
             ft.append("<img id='flag' src=\"/flags/")
             ft.append(b.Flag)

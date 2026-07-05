@@ -220,7 +220,7 @@ def batch_rankings():
                 if ties > 0:
                     increment = 1. / ties
                     for minIndex in minIndexes:
-                        bots[int(minIndex)].VoteScore += increment
+                        bots[int(minIndex[0])].VoteScore += increment  # [0] unwraps the (1,) row (numpy 1.x GAE and 2.x local)
 
             for b in bots:
                 if b.Pairings > 0:

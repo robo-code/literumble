@@ -1,0 +1,18 @@
+# Coverage for the e2e run. Threads because the queue worker + scheduler run in
+# background threads. Run: coverage run test_e2e.py && coverage report
+[run]
+source = .
+concurrency = thread
+omit =
+    test_e2e.py
+    venv/*
+    _memcache_compat.py
+    # not part of the web app: standalone CLI / maintenance scripts + a mockup
+    batchratings_main.py
+    cleanup_bots.py
+    delete_meleerumbles.py
+    mockup.py
+
+[report]
+show_missing = True
+skip_covered = False

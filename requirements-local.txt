@@ -1,0 +1,8 @@
+# Non-App-Engine (SQLite) target. Runs on the host's Python 3.14, so numpy is
+# unpinned to get a 3.14 wheel (the GAE-pinned numpy==1.26.4 has none). ujson is
+# dropped: it isn't imported anywhere. appengine-python-standard is replaced by
+# gae_shim.py.
+Flask==3.0.3
+Flask-Compress==1.15
+gunicorn==22.0.0
+numpy
