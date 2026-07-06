@@ -3,8 +3,8 @@ import time
 from operator import attrgetter
 
 from flask import Response, request
-from google.appengine.api import memcache
 
+import store
 import structures
 from structures import load_blob
 
@@ -51,26 +51,20 @@ def rankings():
 
     parsing = time.time() - starttime
 
-    rumble = memcache.get(game)
+    rumble = structures.Rumble.get_by_key_name(game)
     if rumble is None:
-        rumble = structures.Rumble.get_by_key_name(game)
-        if rumble is None:
-            return "RUMBLE NOT FOUND"
-        else:
-            memcache.set(game, rumble)
+        return "RUMBLE NOT FOUND"
 
-    flagmap = memcache.get(structures.default_flag_map)
-    if flagmap is None:
-        flagmapholder = structures.FlagMap.get_by_key_name(structures.default_flag_map)
-        if flagmapholder is not None:
-            flagmap = flagmapholder.InternalMap
-            memcache.set(structures.default_flag_map, flagmap)
+    flagmap = None
+    flagmapholder = structures.FlagMap.get_by_key_name(structures.default_flag_map)
+    if flagmapholder is not None:
+        flagmap = flagmapholder.InternalMap
 
     flagmap = load_blob(flagmap, {})
     if not isinstance(flagmap, dict):
         flagmap = {}
 
-    botsdict = load_blob(rumble.ParticipantsScores, {})
+    botsdict = store.load_scores(rumble.Name)
     if isinstance(botsdict, dict):
         bots = list(botsdict.values())
     elif isinstance(botsdict, list):

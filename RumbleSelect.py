@@ -2,14 +2,13 @@
 import time
 
 from flask import request
-from google.appengine.api import memcache
 
+import store
 import structures
 from structures import load_blob
 
 
 def rumble_select():
-    global_dict = {}
     starttime = time.time()
     query = request.query_string.decode('utf-8').replace("%20", " ")
     parts = query.split("&")
@@ -20,7 +19,6 @@ def rumble_select():
             requests[ab[0]] = ab[1] if len(ab) > 1 else ""
 
     timing = bool(requests.get("timing", False))
-    regen = bool(requests.get("regen", False))
     dark = requests.get("theme", "") == "dark"
 
     extraArgs = ""
@@ -29,11 +27,8 @@ def rumble_select():
     if dark:
         extraArgs += "&amp;theme=dark"
 
-    cacheKey = "home_dark" if dark else "home"
-    outstr = global_dict.get(cacheKey, None)
-    if outstr is None and not regen:
-        outstr = memcache.get(cacheKey)
-    if outstr is None or regen:
+    outstr = None
+    if outstr is None:
         out = []
         out.append(structures.header("Home", "LiteRumble - Home", dark))
 
@@ -43,9 +38,6 @@ def rumble_select():
         categories = ["1v1", "Melee", "Teams"]
 
         for r in q.run():
-            memr = memcache.get(r.Name)
-            if memr is not None:
-                r = memr
             if r.Melee:
                 rumbles[1].append(r)
             elif r.Teams:
@@ -55,7 +47,7 @@ def rumble_select():
 
         for cat, rumbs in zip(categories, rumbles):
             for r in rumbs:
-                scoresdicts = load_blob(r.ParticipantsScores, {})
+                scoresdicts = store.load_scores(r.Name)
                 entries = len(scoresdicts) if hasattr(scoresdicts, "__len__") else len(r.Participants)
                 r.__dict__["entries"] = entries
             rumbs.sort(key=lambda r: -r.__dict__["entries"])
@@ -70,7 +62,6 @@ def rumble_select():
                 out.append("\n<tr>\n<td>" + gameHref + "</td>\n<td>" + topHref + "</td>\n<td>")
                 out.append(str(r.__dict__["entries"]) + "</td>\n</tr>")
                 r.__dict__.pop("entries", 1)
-                memcache.set(r.Name, r)
 
             out.append("</table>")
 
@@ -87,8 +78,6 @@ def rumble_select():
             out.append("<br><a href=\"?theme=dark\">Dark mode</a>")
 
         outstr = "".join(out)
-        if not timing:
-            memcache.set(cacheKey, outstr, time=3600)
 
     elapsed = time.time() - starttime
     if timing:

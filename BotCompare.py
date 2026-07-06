@@ -5,8 +5,8 @@ import time
 from operator import attrgetter
 
 from flask import request
-from google.appengine.api import memcache
 
+import store
 import structures
 from structures import load_blob
 
@@ -58,65 +58,26 @@ def bot_compare():
 
     parsetime = time.time() - starttime
 
-    cached = True
-    keyhasha = botaName + "|" + game
-    bota = memcache.get(keyhasha)
-    if bota is None:
-        bota = global_dict.get(keyhasha, None)
-    else:
-        global_dict[keyhasha] = bota
-
-    if bota is None or bota.PairingsList is None:
-        bota = structures.BotEntry.get_by_key_name(keyhasha)
-
-        if bota is not None:
-            memcache.set(keyhasha, bota)
-            global_dict[keyhasha] = bota
-            cached = False
-
+    bota = store.load_score(game, botaName)
     if bota is None:
         return "ERROR. name/game combination does not exist: " + botaName + "/" + game
 
-    keyhashb = botbName + "|" + game
-    botb = memcache.get(keyhashb)
-    if botb is None:
-        botb = global_dict.get(keyhashb, None)
-    else:
-        global_dict[keyhashb] = botb
-
-    if botb is None or botb.PairingsList is None:
-        botb = structures.BotEntry.get_by_key_name(keyhashb)
-        if botb is not None:
-            memcache.set(keyhashb, botb)
-            global_dict[keyhashb] = botb
-            cached = False
-
+    botb = store.load_score(game, botbName)
     if botb is None:
         return "ERROR. name/game combination does not exist: " + botbName + "/" + game
 
     rumble = global_dict.get(game, None)
     if rumble is None:
-        rumble = memcache.get(game)
+        rumble = structures.Rumble.get_by_key_name(game)
         if rumble is None:
-            rumble = structures.Rumble.get_by_key_name(game)
-            if rumble is None:
-                return "RUMBLE NOT FOUND"
-            else:
-                global_dict[game] = rumble
-                memcache.set(game, rumble)
-        else:
-            global_dict[game] = rumble
+            return "RUMBLE NOT FOUND"
+        global_dict[game] = rumble
 
     flagmap = global_dict.get(structures.default_flag_map)
     if flagmap is None:
-        flagmap = memcache.get(structures.default_flag_map)
-        if flagmap is None:
-            flagmapholder = structures.FlagMap.get_by_key_name(structures.default_flag_map)
-            if flagmapholder is not None:
-                flagmap = flagmapholder.InternalMap
-                memcache.set(structures.default_flag_map, flagmap)
-                global_dict[structures.default_flag_map] = flagmap
-        else:
+        flagmapholder = structures.FlagMap.get_by_key_name(structures.default_flag_map)
+        if flagmapholder is not None:
+            flagmap = flagmapholder.InternalMap
             global_dict[structures.default_flag_map] = flagmap
 
     flagmap = load_blob(flagmap, {})
@@ -125,33 +86,23 @@ def bot_compare():
 
     retrievetime = time.time() - parsetime - starttime
 
-    botabots = load_blob(bota.PairingsList, [])
-    if not isinstance(botabots, list):
-        botabots = []
-    botbbots = load_blob(botb.PairingsList, [])
-    if not isinstance(botbbots, list):
-        botbbots = []
-
-    enemyScores = load_blob(rumble.ParticipantsScores, {})
-    if not isinstance(enemyScores, dict):
-        enemyScores = {}
-
-    botabots = [b for b in botabots if getattr(b, 'Alive', True)]
-    botbbots = [b for b in botbbots if getattr(b, 'Alive', True)]
+    # join to RumbleScore: only opponents still in the rumble, each carrying the
+    # opponent's OppAPS/OppSurvival (pairings are kept for history but dead ones hidden).
+    botabots = store.load_pairings_alive(game, botaName)
+    botbbots = store.load_pairings_alive(game, botbName)
 
     botbbotsDict = {b.Name: b for b in botbbots}
     commonList = []
     for ba in botabots:
         if ba.Name in botbbotsDict:
             bb = botbbotsDict[ba.Name]
-            eScore = enemyScores.get(ba.Name, None)
             try:
                 bb.APS = float(bb.APS)
                 ba.APS = float(ba.APS)
                 bb.Survival = float(bb.Survival)
                 ba.Survival = float(ba.Survival)
 
-                commonList.append(structures.ComparePair(ba, bb, eScore))
+                commonList.append(structures.ComparePair(ba, bb, ba.OppAPS, ba.OppSurvival))
             except Exception as e:
                 logging.info(str(e))
 
@@ -379,7 +330,7 @@ def bot_compare():
     htmltime = time.time() - sorttime - retrievetime - parsetime - starttime
     elapsed = time.time() - starttime
     if timing:
-        out.append("<br>\n Page served in " + str(int(round(elapsed * 1000))) + "ms. Bot cached: " + str(cached))
+        out.append("<br>\n Page served in " + str(int(round(elapsed * 1000))) + "ms.")
         out.append("\n<br> parsing: " + str(int(round(parsetime * 1000))))
         out.append("\n<br> retrieve: " + str(int(round(retrievetime * 1000))))
         out.append("\n<br> sort: " + str(int(round(sorttime * 1000))))

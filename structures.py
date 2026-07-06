@@ -58,7 +58,7 @@ allowed_versions = ["1"]
 global_dict = {}
 
 class ComparePair:
-    def __init__ (self, bota, botb, eScore):
+    def __init__ (self, bota, botb, oppAPS, oppSurvival):
         self.Name = bota.Name
         self.A_APS = bota.APS
         self.B_APS = botb.APS
@@ -72,8 +72,8 @@ class ComparePair:
         self.B_LastUpload = botb.LastUpload
         self.A_Var = getattr(bota, "Var_APS", -1.0)
         self.B_Var = getattr(botb, "Var_APS", -1.0)
-        self.Opponent_APS = eScore.APS if eScore else float('nan')
-        self.Opponent_Survival = eScore.Survival if eScore else float('nan')
+        self.Opponent_APS = oppAPS
+        self.Opponent_Survival = oppSurvival
 
 class ScoreSet:
     def __init__ (self, name = "", aps = 0.0, min_aps = 100.0, survival = 0.0, battles = 0, lastUpload = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")):
@@ -108,59 +108,6 @@ class LiteBot:
         if loadDict is not None:
             self.__dict__.update(loadDict)
 
-class CachedBotEntry:
-    def __init__(self,bot):
-        self.key_name = bot.key().name()
-        self.Name = bot.Name
-        self.Battles = bot.Battles
-        self.Pairings = bot.Pairings
-        self.APS = bot.APS
-        self.Survival = bot.Survival
-        self.PL = bot.PL
-        self.VoteScore = bot.VoteScore
-        self.Rumble = bot.Rumble
-        self.LastUpload = bot.LastUpload
-        self.Active = bot.Active
-        self.PairingsList = bot.PairingsList
-        self.ANPP = bot.ANPP
-        self.APS_CI = getattr(bot, "APS_CI", -1.0)
-        self.Uploaders = bot.__dict__.get("Uploaders",[])
-
-class BotEntry(db.Model):
-    def init_from_cache(self,bot):
-#        self.key_name = bot.key_name
-        self.Name = bot.Name
-        self.Battles = int(bot.Battles)
-        self.Pairings = int(bot.Pairings)
-        self.APS = float(bot.APS)
-        self.Survival = float(bot.Survival)
-        self.PL = int(bot.PL)
-        self.VoteScore = float(bot.VoteScore)
-        self.Rumble = bot.Rumble
-        self.LastUpload = bot.LastUpload
-        self.Active = bot.Active
-        self.PairingsList = bot.PairingsList
-        self.ANPP = float(bot.ANPP)
-        self.APS_CI = float(getattr(bot, "APS_CI", -1.0))
-        self.Uploaders = bot.__dict__.get("Uploaders",[])
-
-    #NR = db.StringProperty() --> key_name
-    Name = db.StringProperty(indexed = False)
-    Battles = db.IntegerProperty(indexed = False)
-    Pairings = db.IntegerProperty(indexed = False)
-    APS = db.FloatProperty(indexed = False)
-    Survival = db.FloatProperty(indexed = False)
-    PL = db.IntegerProperty(indexed = False)
-    VoteScore = db.FloatProperty(indexed = False,default = 0.0)
-    Rumble = db.StringProperty(indexed = False)
-    LastUpload = db.StringProperty(indexed = False)
-    Active = db.BooleanProperty(indexed = False)
-    PairingsList = db.BlobProperty(indexed = False)
-    ANPP = db.FloatProperty(indexed = False, default = 0.0)
-    APS_CI = db.FloatProperty(indexed = False, default = -1.0)
-    Uploaders = db.StringListProperty(indexed = False)
-
-
 #class Uploader(db.Model):
 #    #NC = db.StringProperty() --> key_name
 #    Name = db.StringProperty(indexed = False)
@@ -187,7 +134,6 @@ class Rumble(db.Model):
     LastUpload = db.StringProperty(indexed = False)
     PriorityBattles = db.BooleanProperty(indexed = False, default = True)
     BatchScoresAccurate = db.BooleanProperty(default = False)
-    ParticipantsScores = db.BlobProperty(default = db.Blob(zlib.compress(pickle.dumps({}))), indexed = False)
     Uploaders = db.BlobProperty(indexed = False, default = db.Blob(zlib.compress(pickle.dumps({}))))
 
 default_flag_map = "FLAGMAP"

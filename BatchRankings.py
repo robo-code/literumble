@@ -3,31 +3,17 @@ import datetime
 import gc
 import logging
 import math
-import pickle
 import sys
 import time
-import zlib
 from operator import attrgetter
 
 import numpy
 from flask import request
-from google.appengine.api import memcache, runtime, taskqueue
+from google.appengine.api import taskqueue
 from google.appengine.ext import db
 
+import store
 import structures
-from structures import load_blob
-
-
-def list_split(alist, split_size):
-    return [alist[i:i + split_size] for i in range(0, len(alist), split_size)]
-
-
-def dict_split(d, chunk_size=1):
-    items = list(d.items())
-    return [
-        dict(items[i:i + chunk_size])
-        for i in range(0, len(items), chunk_size)
-    ]
 
 
 def queue_batch_rankings():
@@ -37,8 +23,7 @@ def queue_batch_rankings():
 
 
 def queue_hourly_batch_rankings():
-    payload = "write=true" if datetime.datetime.now(datetime.timezone.utc).hour % 3 == 0 else ""
-    taskqueue.add(url='/BatchRankings', payload=payload)
+    taskqueue.add(url='/BatchRankings', payload="")
     return "queued"
 
 
@@ -61,100 +46,25 @@ def batch_rankings():
                 requests[ab[0]] = ab[1] if len(ab) > 1 else ""
 
         force = bool(requests.get("force", False))
-        write = bool(requests.get("write", False))
-        minwrite = bool(requests.get("minwrite", False))
-
-        rpcList = []
-        client = memcache.Client()
 
         q = structures.Rumble.all()
         rumbles = []
         for r in q.run():
-            memr = memcache.get(r.Name)
-            if memr is not None:
-                r = memr
             if r.BatchScoresAccurate and not force:
                 continue
             rumbles.append(r)
 
         for r in rumbles:
-            scoresdicts = load_blob(r.ParticipantsScores, {})
-            entries = len(scoresdicts) if hasattr(scoresdicts, "__len__") else 0
+            scoresdicts = store.load_scores(r.Name)
+            entries = len(scoresdicts)
             r.__dict__["entries"] = entries
         rumbles.sort(key=lambda r: -r.__dict__["entries"])
 
-        first = True
         for r in rumbles:
-            if not first:
-                time.sleep(5)
-                gc.collect()
-                gc.collect(2)
-            first = False
-
-            logging.info("mem usage at start of " + r.Name + ": " + str(runtime.memory_usage().current) + "MB")
-            scores = load_blob(r.ParticipantsScores, {})
-            if not isinstance(scores, dict):
-                scores = {}
-
+            scores = store.load_scores(r.Name)
             if len(scores) == 0:
                 continue
-
-            r.ParticipantsScores = None
-
-            particHash = [p + "|" + r.Name for p in scores]
-
-            particSplit = list_split(particHash, 32)
-            ppDict = {}
-            for l in particSplit:
-                ppDict.update(memcache.get_multi(l))
-                time.sleep(0.1)
-
-            particSplit = None
-
-            bots = [ppDict.get(h, None) for h in particHash]
-
-            botsdict = {}
-
-            missingHashes = []
-            missingIndexes = []
-            for i in range(len(bots)):
-                if bots[i] is None:
-                    missingHashes.append(particHash[i])
-                    missingIndexes.append(i)
-
-                elif isinstance(bots[i], structures.BotEntry):
-                    bots[i] = structures.CachedBotEntry(bots[i])
-
-            if len(missingHashes) > 0:
-                bmis = structures.BotEntry.get_by_key_name(missingHashes)
-
-                lostList = []
-
-                for i in range(len(missingHashes)):
-                    if bmis[i] is not None:
-                        cb = structures.CachedBotEntry(bmis[i])
-                        bots[missingIndexes[i]] = cb
-                        botsdict[missingHashes[i]] = cb
-
-                    else:
-                        bots[missingIndexes[i]] = None
-                        lostList.append(missingHashes[i])
-
-            while len(particHash) > 0:
-                particHash.pop()
-            particHash = None
-
-            while len(missingHashes) > 0:
-                missingHashes.pop()
-            missingHashes = None
-
-            while len(missingIndexes) > 0:
-                missingIndexes.pop()
-            missingIndexes = None
-
-            logging.info("mem usage after loading bots: " + str(runtime.memory_usage().current) + "MB")
-
-            bots = [b for b in bots if b is not None]
+            bots = list(scores.values())
 
             get_key = attrgetter("APS")
             bots.sort(key=lambda b: get_key(b), reverse=True)
@@ -172,9 +82,7 @@ def batch_rankings():
             APSs.fill(numpy.nan)
             totalAlivePairs = 0
             for i, b in enumerate(bots):
-                pairings = load_blob(b.PairingsList, [])
-                if not isinstance(pairings, list):
-                    pairings = []
+                pairings = store.load_pairings(r.Name, b.Name)
                 removes = []
                 alivePairings = 0
                 for q_idx, p in enumerate(pairings):
@@ -198,8 +106,7 @@ def batch_rankings():
                         if p.Alive:
                             removed = True
                         p.Alive = False
-                if removed:
-                    b.PairingsList = zlib.compress(pickle.dumps(pairings, -1), 1)
+                # pairings are never deleted (kept for history); no persist here
 
             gc.collect()
 
@@ -210,7 +117,6 @@ def batch_rankings():
 
             gc.collect()
             logging.info(str(len(bots)) + " bots loaded, total of " + str(totalAlivePairs) + " alive pairings")
-            logging.info("mem usage after unzipping pairings: " + str(runtime.memory_usage().current) + "MB")
 
             # Vote
             mins = numpy.nanmax(APSs, 1)
@@ -244,7 +150,9 @@ def batch_rankings():
             # Avg Normalised Pairing Percentage
             mins = numpy.nanmin(APSs, 1)
             maxs = numpy.nanmax(APSs, 1)
-            inv_ranges = numpy.float64(1.0) / (maxs - mins)
+            with numpy.errstate(divide='ignore'):
+                # zero range (all-equal APS) -> inf, filtered by the isfinite guard below
+                inv_ranges = numpy.float64(1.0) / (maxs - mins)
             NPPs = -numpy.ones((botlen, botlen))
             for i in range(botlen):
                 if numpy.isfinite(inv_ranges[i]):
@@ -252,15 +160,9 @@ def batch_rankings():
                 else:
                     NPPs[i, :] = numpy.float64(100)
 
-            changedBots = []
-
-            botsdict = {}
-
             maxPerPair = structures.rolling_battle_cap
             for i, b in enumerate(bots):
-                pairings = load_blob(b.PairingsList, [])
-                if not isinstance(pairings, list):
-                    pairings = []
+                pairings = store.load_pairings(r.Name, b.Name)
                 nppCount = 0
                 totalNPP = 0.0
 
@@ -272,12 +174,10 @@ def batch_rankings():
                 ci_var_sum = 0.0
                 ci_count = 0
 
-                changed = False
                 for p in pairings:
                     j = botIndexes.get(p.Name, -1)
                     if j != -1:
                         p.Alive = True
-                        changePotential = (p.KNNPBI == 0.0 and p.NPP == -1)
 
                         aliveCount += 1
 
@@ -301,9 +201,6 @@ def batch_rankings():
                         else:
                             totalNPP += p.NPP
                             nppCount += 1
-
-                        if changePotential and p.KNNPBI != 0.0 and p.NPP != -1:
-                            changed = True
                     else:
                         p.Alive = False
                         p.KNNPBI = 0
@@ -323,85 +220,18 @@ def batch_rankings():
                 else:
                     b.APS_CI = -1.0
 
-                b.PairingsList = zlib.compress(pickle.dumps(pairings, -1), 1)
+                store.replace_pairings(r.Name, b.Name, pairings)
                 b.Pairings = aliveCount
-                if b.Pairings > 0:
-                    botsdict[b.key_name] = b
-                if changed:
-                    changedBots.append(b)
 
             KNN_PBI = None
             APSs = None
             NPPs = None
-            logging.info("mem usage after zipping: " + str(runtime.memory_usage().current) + "MB")
-
-            gc.collect()
-            if len(botsdict) > 0:
-                splitlist = dict_split(botsdict, 20)
-                logging.info("split bots into " + str(len(splitlist)) + " sections")
-
-                for d in splitlist:
-                    rpcList.append(client.set_multi_async(d))
-                    time.sleep(.5)
-
-                logging.info("wrote " + str(len(botsdict)) + " bots to memcache")
-
-            botsdict.clear()
-            botsdict = None
 
             scores = {b.Name: structures.LiteBot(b) for b in bots}
+            store.replace_scores(r.Name, scores)
 
-            r.ParticipantsScores = None
-            gc.collect()
-
-            r.ParticipantsScores = db.Blob(zlib.compress(pickle.dumps(scores, pickle.HIGHEST_PROTOCOL), 3))
-            logging.info("mem usage after participants zipping: " + str(runtime.memory_usage().current) + "MB")
-            scores = None
-
-            if write:
-                writebots = [None] * len(bots)
-                for i, b in enumerate(bots):
-                    putb = structures.BotEntry(key_name=b.key_name)
-                    putb.init_from_cache(b)
-                    writebots[i] = putb
-                write_lists = list_split(writebots, 50)
-                for subset in write_lists:
-                    db.put(subset)
-                    time.sleep(0.1)
-                logging.info("wrote " + str(len(writebots)) + " bots to database")
-
-            while len(bots) > 0:
-                bots.pop()
-            bots = None
-
-            if minwrite:
-                writebots = [None] * len(changedBots)
-                for i, b in enumerate(changedBots):
-                    putb = structures.BotEntry(key_name=b.key_name)
-                    putb.init_from_cache(b)
-                    writebots[i] = putb
-                write_lists = list_split(writebots, 50)
-                for subset in write_lists:
-                    db.put(subset)
-                    time.sleep(0.1)
-                logging.info("wrote " + str(len(writebots)) + " changed bots to database")
-
-            while len(changedBots) > 0:
-                changedBots.pop()
-            changedBots = None
-            gc.collect()
-
-            if write or minwrite:
-                r.BatchScoresAccurate = True
-
-            rpcList.append(client.set_multi_async({r.Name: r}))
-
+            r.BatchScoresAccurate = True
             db.put([r])
-            r = None
-            logging.info("mem usage after write: " + str(runtime.memory_usage().current) + "MB")
-
-        for rpc in rpcList:
-            rpc.get_result()
 
         elapsed = time.time() - starttime
         logging.info("Success in " + str(round(1000 * elapsed) / 1000) + "s")

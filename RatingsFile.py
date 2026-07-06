@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from flask import Response, request
-from google.appengine.api import memcache
 
+import store
 import structures
 from structures import global_dict, load_blob
 
@@ -24,18 +24,12 @@ def ratings_file():
 
     rumble = global_dict.get(game, None)
     if rumble is None:
-        rumble = memcache.get(game)
+        rumble = structures.Rumble.get_by_key_name(game)
         if rumble is None:
-            rumble = structures.Rumble.get_by_key_name(game)
-            if rumble is None:
-                return "RUMBLE NOT FOUND"
-            else:
-                global_dict[game] = rumble
-                memcache.set(game, rumble)
-        else:
-            global_dict[game] = rumble
+            return "RUMBLE NOT FOUND"
+        global_dict[game] = rumble
 
-    botsdict = load_blob(rumble.ParticipantsScores, {})
+    botsdict = store.load_scores(rumble.Name)
     r = list(botsdict.values()) if isinstance(botsdict, dict) else []
 
     out = []

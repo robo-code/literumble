@@ -1,12 +1,7 @@
 #!/usr/bin/env python
-import pickle
-import zlib
-
 from flask import request
-from google.appengine.api import memcache
 
-import structures
-from structures import load_blob
+import store
 
 
 def nth_repl(s, sub, repl, nth):
@@ -42,7 +37,6 @@ def remove_old_participant():
 
 
 def _remove_from_rumble(requests):
-    global_dict = {}
     if "version" not in requests or requests["version"] != "1":
         return "ERROR. bad/no version"
 
@@ -56,66 +50,24 @@ def _remove_from_rumble(requests):
     while name.count("%20") > 0:
         name = rreplace(name, "%20", " ", 1)
 
-    rumble = global_dict.get(game, None)
-    if rumble is None:
-        rumble = memcache.get(game)
-        if rumble is None:
-            rumble = structures.Rumble.get_by_key_name(game)
-
-    entry = None
-    keyhash = None
-    if name.count(" ") == 0:
-        num_underscores = name.count("_")
-        error_messages = []
-        for n in range(num_underscores):
-            check_name = nth_repl(name, "_", " ", n + 1)
-
-            keyhash = check_name + "|" + game
-            entry = global_dict.get(keyhash, None)
-            if entry is None:
-                entry = memcache.get(keyhash)
-                if entry is None:
-                    entry = structures.BotEntry.get_by_key_name(keyhash)
-                    if entry is None:
-                        error_messages.append("ERROR. name/game does not exist: " + check_name + "/" + game)
-                    else:
-                        entry = structures.CachedBotEntry(entry)
-
-            if entry is not None:
-                name = check_name
-                break
-        if entry is None:
-            return "\n".join(error_messages)
-    else:
+    if name.count(" ") != 0:
         return "ERROR. Bot name missing version."
 
-    if isinstance(entry, structures.BotEntry):
-        entry = structures.CachedBotEntry(entry)
+    entry = None
+    error_messages = []
+    for n in range(name.count("_")):
+        check_name = nth_repl(name, "_", " ", n + 1)
+        entry = store.load_score(game, check_name)
+        if entry is None:
+            error_messages.append("ERROR. name/game does not exist: " + check_name + "/" + game)
+        else:
+            name = check_name
+            break
+    if entry is None:
+        return "\n".join(error_messages)
 
-    global_dict.pop(keyhash, 0)
-    memcache.delete(keyhash)
-
-    entry.Active = False
-
-    scores = load_blob(rumble.ParticipantsScores, {})
-    if not isinstance(scores, dict):
-        scores = {}
-
-    scores.pop(name, 1)
-    rumble.ParticipantsScores = zlib.compress(pickle.dumps(scores, pickle.HIGHEST_PROTOCOL), 4)
-
-    memcache.delete_multi(["home", "home_dark"])
-    global_dict.pop("home", 0)
-    global_dict.pop("home_dark", 0)
-
-    memcache.set(entry.key_name, entry)
-    global_dict[entry.key_name] = entry
-    modelBot = structures.BotEntry(key_name=entry.key_name)
-    modelBot.init_from_cache(entry)
-    modelBot.put()
-
-    global_dict[game] = rumble
-    memcache.set(game, rumble)
-    rumble.put()
+    # drop the bot from the rumble's scores; its Pairing rows are kept for history
+    # (they'll just read as not-alive since it's no longer a participant)
+    store.delete_scores(game, [name])
 
     return "OK. " + name + " retired from " + game

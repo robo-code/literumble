@@ -5,21 +5,15 @@ import logging
 import math
 import pickle
 import random
-import threading
 import time
 import zlib
 from collections import deque
 
 from flask import request
-from google.appengine.api import memcache
-from google.appengine.ext import db
 
+import store
 import structures
 from structures import global_dict, load_blob
-
-global_sync = {}
-locks = {}
-
 
 def handle_queued_results():
     out = []
@@ -27,66 +21,22 @@ def handle_queued_results():
 
     rumble = results.get("game", "ERROR")
 
-    syncname = str(results.get("melee") == "YES") + "|" + structures.sync
-    if syncname not in locks:
-        locks[syncname] = threading.Lock()
-    sync_lock = locks[syncname]
-
-    global_sync[syncname] = global_sync.get(syncname, {})
-    botsync = global_sync[syncname]
-
     bota = results.get("fname")
     botb = results.get("sname")
     logging.debug("Bots : " + bota + " vs. " + botb)
 
     bd = [[bota, rumble], [botb, rumble]]
 
-    botHashes = ["|".join(a) for a in bd]
-
-    memget = [rumble]
-    memget.extend(botHashes)
-    memdict = memcache.get_multi(memget)
-
-    game = memdict.get(rumble, None)
-    game_future = None
-    if game is None:
-        game_future = db.get_async(db.Key.from_path('Rumble', rumble))
+    game = structures.Rumble.get_by_key_name(rumble)
 
     newBot = False
 
-    bots = [memdict.get(h, None) for h in botHashes]
-
+    # bots and pairings both come from the store; the score rows are the
+    # single source of truth.
+    bots = [None, None]
     pairingsarray = [[], []]
-    botFutures = [None, None]
     for i in [0, 1]:
-        if bots[i] is None or bots[i].PairingsList is None:
-            botFutures[i] = db.get_async(db.Key.from_path('BotEntry', botHashes[i]))
-
-    for i in [0, 1]:
-        if botFutures[i] is not None:
-            modelbot = botFutures[i].get_result()
-            if modelbot is not None:
-                bots[i] = structures.CachedBotEntry(modelbot)
-
-    for i in [0, 1]:
-        if bots[i] is None:
-            modelbot = structures.BotEntry(
-                key_name=botHashes[i],
-                Name=bd[i][0], Battles=0, Pairings=0, APS=0.0,
-                Survival=0.0, PL=0, Rumble=rumble, Active=False,
-                PairingsList=zlib.compress(pickle.dumps([]), 1))
-            bots[i] = structures.CachedBotEntry(modelbot)
-            newBot = True
-        if isinstance(bots[i], structures.BotEntry):
-            bots[i] = structures.CachedBotEntry(bots[i])
-
-        pairingsarray[i] = load_blob(bots[i].PairingsList, [])
-        if not isinstance(pairingsarray[i], list):
-            pairingsarray[i] = []
-        bots[i].PairingsList = None
-
-    if game_future is not None:
-        game = game_future.get_result()
+        pairingsarray[i] = store.load_pairings(rumble, bd[i][0])
 
     if game is None:
         game = structures.Rumble(
@@ -94,7 +44,7 @@ def handle_queued_results():
             Name=rumble, Rounds=int(results["rounds"]),
             Field=results["field"], Melee=results["melee"] == "YES",
             Teams=results["teams"] == "YES", TotalUploads=0,
-            MeleeSize=10, ParticipantsScores=db.Blob(zlib.compress(pickle.dumps({}))))
+            MeleeSize=10)
         out.append("CREATED NEW GAME TYPE " + rumble + "\n")
         logging.info("Created new game type: " + rumble)
     else:
@@ -117,17 +67,23 @@ def handle_queued_results():
             logging.error(errstr + ", ".join(errorReasons) + "  User: " + results["user"])
             return "".join(out)
 
-    scores = load_blob(game.ParticipantsScores, {})
-    game.ParticipantsScores = None
-    if not isinstance(scores, dict):
-        scores = {}
+    scores = store.load_scores(rumble)
 
+    nowStr = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for i in [0, 1]:
-        if not bots[i].Active or bots[i].Name not in scores:
+        name = bd[i][0]
+        bots[i] = scores.get(name, None)
+        if bots[i] is None:
+            bots[i] = structures.LiteBot(loadDict={
+                "Name": name, "Battles": 0, "Pairings": 0, "APS": 0.0,
+                "Survival": 0.0, "PL": 0, "VoteScore": 0.0, "Rumble": rumble,
+                "LastUpload": nowStr, "Active": False, "ANPP": 0.0,
+                "APS_CI": -1.0, "Uploaders": []})
+        if not bots[i].Active or name not in scores:
             bots[i].Active = True
-            scores[bots[i].Name] = structures.LiteBot(bots[i])
+            scores[name] = structures.LiteBot(bots[i])
             newBot = True
-            out.append("Added " + bd[i][0] + " to " + rumble + "\n")
+            out.append("Added " + name + " to " + rumble + "\n")
             logging.info("added new bot!")
 
     scorea = float(results["fscore"])
@@ -278,9 +234,11 @@ def handle_queued_results():
             else:
                 b.APS_CI = -1.0
 
-        b.PairingsList = db.Blob(zlib.compress(pickle.dumps(pairings, pickle.HIGHEST_PROTOCOL), 1))
         b.LastUpload = apair.LastUpload
         b.Pairings = alivePairings
+
+    # only this battle's pair changed; write its single canonical row (both sides)
+    store.upsert_pair(rumble, bota, apair, botb, bpair)
 
     game.TotalUploads += 1
 
@@ -311,61 +269,6 @@ def handle_queued_results():
         except AttributeError:
             b.__dict__["Uploaders"] = [uploaderName]
 
-    wrote = False
-    with sync_lock:
-        for b in bots:
-            if isinstance(b, structures.BotEntry):
-                key = b.key().name()
-            else:
-                key = b.key_name
-            botsync[key] = botsync.get(key, 0) + 1
-
-        minSize = min(10, len(scores) // 2)
-
-        logging.debug("botsync: " + str(len(botsync)))
-
-        if len(botsync) > minSize:
-            syncset = list(botsync.keys())
-
-            syncbotsDict = memcache.get_multi(syncset)
-
-            syncbots = []
-            for sb in syncset:
-                b = syncbotsDict.get(sb, None)
-
-                if b is None or b.PairingsList is None:
-                    syncbotsDict.pop(sb, 1)
-                else:
-                    syncbots.append(b)
-
-                botsync.pop(sb, 1)
-
-            try:
-                thisput = []
-                while len(syncbots) > 0:
-                    b = syncbots.pop()
-
-                    if isinstance(b, structures.BotEntry):
-                        key = b.key().name()
-                    else:
-                        key = b.key_name
-
-                    putb = structures.BotEntry(key_name=key)
-                    putb.init_from_cache(b)
-                    thisput.append(putb)
-
-                db.put(thisput)
-
-                logging.info("wrote " + str(len(thisput)) + " results to database")
-                for b in thisput:
-                    s = b.key().name()
-                    botsync.pop(s, 1)
-                    syncbotsDict.pop(s, 1)
-                wrote = True
-
-            except Exception as e:
-                logging.error('Failed to write data: ' + str(e))
-
     for b in bots:
         if b.Name in scores:
             lb = scores[b.Name]
@@ -374,28 +277,15 @@ def handle_queued_results():
             scores.pop(b.Name, 1)
         scores[b.Name] = structures.LiteBot(b)
 
-    game.ParticipantsScores = db.Blob(zlib.compress(pickle.dumps(scores, pickle.HIGHEST_PROTOCOL), 1))
+    # only the two battling bots changed; write just their rows
+    store.upsert_scores(rumble, [scores[bots[0].Name], scores[bots[1].Name]])
     game.Participants = []
 
     if game.BatchScoresAccurate:
         game.BatchScoresAccurate = False
-        if not newBot:
-            game.put()
-            wrote = True
 
-    if newBot or wrote:
-        game.put()
-        memcache.delete_multi(["home", "home_dark"])
-
-    botsDict = {rumble: game}
+    game.put()
     global_dict[rumble] = game
-    for b in bots:
-        if isinstance(b, structures.BotEntry):
-            b = structures.CachedBotEntry(b)
-
-        key = b.key_name
-        botsDict[key] = b
-    memcache.set_multi(botsDict)
 
     scoreVals = list(scores.values())
     maxPairs = len(scoreVals) - 1
@@ -433,16 +323,8 @@ def handle_queued_results():
                 priopairs = pairingsarray[1]
             elif priobot is not None:
                 if priobot.Pairings < maxPairs:
-                    bhash = priobot.Name + "|" + rumble
-                    fullPrioBot = memcache.get(bhash)
-                else:
-                    fullPrioBot = None
-
-                if fullPrioBot:
-                    priopairs = load_blob(fullPrioBot.PairingsList, [])
-                    if not isinstance(priopairs, list):
-                        priopairs = []
-                    logging.info("memcache lookup shortcut to local search")
+                    priopairs = store.load_pairings(rumble, priobot.Name)
+                    logging.info("loaded pairings for local search")
                 else:
                     priobot2 = random.choice(scoreVals).Name
                     catch = 10
@@ -478,24 +360,8 @@ def handle_queued_results():
             if bots[1].Name not in names and bots[0].Name not in names:
                 priobot = random.choice(possBots)
 
-                bhash = priobot.Name + "|" + rumble
-                fullPrioBot = memcache.get(bhash)
-                if fullPrioBot:
-                    priopairs = load_blob(fullPrioBot.PairingsList, [])
-                    if not isinstance(priopairs, list):
-                        priopairs = []
-                    logging.info("memcache lookup shortcut to global search")
-                else:
-                    priobot2 = random.choice(scoreVals).Name
-                    catch = 10
-                    while priobot2 == priobot.Name and catch > 0:
-                        priobot2 = random.choice(scoreVals).Name
-                        catch -= 1
-                    if catch == 0:
-                        priobot2 = None
-                        logging.info("repeatedly found same bot for prio")
-                    else:
-                        logging.info("global min search successful for low-battled bot")
+                priopairs = store.load_pairings(rumble, priobot.Name)
+                logging.info("loaded pairings for global search")
 
             elif bots[0].Battles <= bots[1].Battles:
                 priobot = bots[0]

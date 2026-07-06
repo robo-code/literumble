@@ -6,7 +6,6 @@ from flask import Flask, abort, redirect, request
 from flask_compress import Compress
 from google.appengine.api import wrap_wsgi_app
 
-import _memcache_compat  # noqa: F401
 import BatchRankings
 import BotCompare
 import BotDetails
@@ -26,6 +25,7 @@ app.wsgi_app = wrap_wsgi_app(app.wsgi_app)
 Compress(app)
 
 # On App Engine (REDIRECT_TO set in app.yaml) send everything to the new host.
+# Unset on the SQLite server, so the same code is a no-op there -- no loop.
 # POST uploads can't follow a 302 (Java HttpURLConnection won't redirect POST),
 # so those paths are proxied through to the new host instead.
 _REDIRECT_TO = os.environ.get("REDIRECT_TO")

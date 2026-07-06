@@ -117,9 +117,9 @@ def main():
     # === Scenario: data survives across processes ===
     # GIVEN battles written to the SQLite file
     # WHEN a separate process opens its own connection and reads them back
-    code = ("import gae_shim, structures;"
-            "a=structures.BotEntry.get_by_key_name('Alpha|%s');"
-            "b=structures.BotEntry.get_by_key_name('Bravo|%s');"
+    code = ("import gae_shim, store;"
+            "a=store.load_score('%s', 'Alpha');"
+            "b=store.load_score('%s', 'Bravo');"
             "print(a.APS, b.APS)" % (GAME, GAME))
     out = subprocess.check_output(
         [sys.executable, "-c", code],
@@ -134,6 +134,11 @@ def main():
     background.drain()
     present_before = any(b["name"] == "Delta 1.0"
                          for b in get_json("/Rankings?game=%s&api=1" % GAME))
+
+    def alpha_opps():
+        d = get_json("/BotDetails?game=%s&name=Alpha&api=1" % GAME)
+        return {p["name"] for p in d["pairingsList"]}
+    paired_before = "Delta 1.0" in alpha_opps()
     # WHEN it is removed
     removal = client.get(
         "/RemoveOldParticipant?version=1&game=%s&name=Delta_1.0" % GAME
@@ -144,6 +149,13 @@ def main():
     assert present_before, "Delta should have entered the rumble"
     assert "retired" in removal, removal
     assert not present_after, "Delta should be gone after retirement"
+
+    # === Scenario: a retired opponent drops out of pairing views ===
+    # GIVEN Delta was Alpha's opponent and is now retired
+    # WHEN Alpha's pairings are read
+    # THEN Delta was listed before removal and is gone after
+    assert paired_before, "Delta should have been one of Alpha's pairings"
+    assert "Delta 1.0" not in alpha_opps(), "retired Delta must not show in Alpha's pairings"
 
     # === Scenario: HTML pages render (light and dark theme) ===
     # GIVEN bots exist (the api=1 JSON branches are asserted above); the

@@ -1,7 +1,6 @@
 from flask import Flask
 from google.appengine.api import wrap_wsgi_app
 
-import _memcache_compat  # noqa: F401
 import BatchRankings
 from auth import require_task
 

@@ -4,8 +4,8 @@ import time
 from operator import attrgetter
 
 from flask import Response, request
-from google.appengine.api import memcache
 
+import store
 import structures
 from structures import global_dict, load_blob
 
@@ -53,43 +53,26 @@ def bot_details():
 
     parsetime = time.time() - starttime
 
-    cached = True
-    keyhash = name + "|" + game
-    bot = memcache.get(keyhash)
+    cached = False
+    bot = store.load_score(game, name)
 
-    if bot is None or bot.PairingsList is None:
-        bot = structures.BotEntry.get_by_key_name(keyhash)
-        if bot is not None:
-            memcache.set(keyhash, bot)
-            cached = False
     rumble = None
     if not api:
         rumble = global_dict.get(game, None)
         if rumble is None:
-            rumble = memcache.get(game)
+            rumble = structures.Rumble.get_by_key_name(game)
             if rumble is None:
-                rumble = structures.Rumble.get_by_key_name(game)
-                if rumble is None:
-                    return "RUMBLE NOT FOUND"
-                else:
-                    global_dict[game] = rumble
-                    memcache.set(game, rumble)
-            else:
-                global_dict[game] = rumble
+                return "RUMBLE NOT FOUND"
+            global_dict[game] = rumble
 
     if bot is None:
         return "ERROR. name/game combination does not exist: " + name + "/" + game
 
     flagmap = global_dict.get(structures.default_flag_map)
     if flagmap is None:
-        flagmap = memcache.get(structures.default_flag_map)
-        if flagmap is None:
-            flagmapholder = structures.FlagMap.get_by_key_name(structures.default_flag_map)
-            if flagmapholder is not None:
-                flagmap = flagmapholder.InternalMap
-                memcache.set(structures.default_flag_map, flagmap)
-                global_dict[structures.default_flag_map] = flagmap
-        else:
+        flagmapholder = structures.FlagMap.get_by_key_name(structures.default_flag_map)
+        if flagmapholder is not None:
+            flagmap = flagmapholder.InternalMap
             global_dict[structures.default_flag_map] = flagmap
 
     flagmap = load_blob(flagmap, {})
@@ -98,9 +81,9 @@ def bot_details():
 
     bots = None
     if lim > 0 or not api:
-        bots = load_blob(bot.PairingsList, [])
-        if not isinstance(bots, list):
-            bots = []
+        # join to RumbleScore: only opponents still in the rumble (dead pairings are
+        # kept for history but not shown), each carrying the opponent's OppAPS/OppSurvival.
+        bots = store.load_pairings_alive(game, name)
 
         removes = []
         for b in bots:
@@ -133,7 +116,7 @@ def bot_details():
     retrievetime = time.time() - parsetime - starttime
 
     if lim > 0:
-        bots = [b for b in bots if getattr(b, 'Alive', True)]
+        # load_pairings_alive already returns only live opponents
         if order == "APS CI":
             ci = structures.pairing_ci
             bots = sorted(bots, key=lambda b: ci(b) if ci(b) is not None else -1.0, reverse=reverseSort)
@@ -233,10 +216,6 @@ def bot_details():
     out.append("<td rowspan=\"11\"><canvas id=\"distSurvival\" width=\"231\" height=\"231\" style=\"border: black 1px solid;\"></canvas></td>")
     out.append("<td rowspan=\"11\"><canvas id=\"distKNNPBI\" width=\"231\" height=\"231\" style=\"border: black 1px solid;\"></canvas></td>")
 
-    enemyScores = load_blob(rumble.ParticipantsScores, {}) if rumble is not None else {}
-    if not isinstance(enemyScores, dict):
-        enemyScores = {}
-
     out.append("</td></tr>")
     out.append("<tr>\n<th>APS</th>\n<td>\n" + structures.fmt(bot.APS) + "</td></tr>")
     botCI = getattr(bot, "APS_CI", -1.0)
@@ -311,7 +290,6 @@ def bot_details():
             bci = structures.pairing_ci(b)
             bciStr = "n/a" if bci is None else "&plusmn;" + structures.fmt(bci)
 
-            eScore = enemyScores.get(b.Name, None)
             cells = [str(rank),
                      flagtag2,
                      botNameHref,
@@ -323,8 +301,8 @@ def bot_details():
                      b.KNNPBI,
                      b.Battles,
                      b.LastUpload,
-                     eScore.APS if eScore else float('nan'),
-                     eScore.Survival if eScore else float('nan')]
+                     b.OppAPS,
+                     b.OppSurvival]
 
             out.append("\n<tr>")
             for i, cell in enumerate(cells):

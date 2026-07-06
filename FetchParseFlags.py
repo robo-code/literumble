@@ -3,7 +3,7 @@ import zlib
 import pickle
 
 from google.appengine.ext import db
-from google.appengine.api import memcache, urlfetch
+from google.appengine.api import urlfetch
 
 import structures
 from structures import global_dict
@@ -33,7 +33,6 @@ def fetch_parse_flags():
         db_map = structures.FlagMap(key_name=structures.default_flag_map)
         db_map.InternalMap = db.Blob(zlib.compress(pickle.dumps(flag_map, pickle.HIGHEST_PROTOCOL)))
         db.put(db_map)
-        memcache.set(structures.default_flag_map, db_map.InternalMap)
         global_dict[structures.default_flag_map] = db_map.InternalMap
 
         return "\nSuccess!"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploy to both targets (for now): App Engine and the SQLite host on
-# rumble.robowiki.net. Run test_e2e.py first; abort the whole deploy if it fails.
+# Deploy to the SQLite host on rumble.robowiki.net. Run test_e2e.py first;
+# abort the deploy if it fails.
 set -euo pipefail
 
 HOST=root@robowiki.net
@@ -9,8 +9,8 @@ DIR=/opt/literumble
 echo "== running e2e tests =="
 venv/bin/python test_e2e.py
 
-echo "== deploying to App Engine =="
-gcloud app deploy --project=literumble app.yaml batchratings.yaml cron.yaml
+# App Engine is now just the static redirect forwarder; no need to redeploy it here.
+# gcloud app deploy --project=literumble app.yaml batchratings.yaml cron.yaml
 
 echo "== deploying to rumble.robowiki.net =="
 rsync -az --delete \

@@ -3,10 +3,11 @@ import datetime
 import time
 
 from flask import request
-from google.appengine.api import memcache, taskqueue
+from google.appengine.api import taskqueue
 
+import store
 import structures
-from structures import global_dict, load_blob
+from structures import load_blob
 
 
 def formatSecs(secs):
@@ -48,19 +49,13 @@ def rumble_stats():
             requests[ab[0]] = ab[1] if len(ab) > 1 else ""
 
     timing = bool(requests.get("timing", False))
-    regen = bool(requests.get("regen", False))
     dark = requests.get("theme", "") == "dark"
 
     extraArgs = ""
     if dark:
         extraArgs += "&amp;theme=dark"
 
-    cacheKey = "stats_dark" if dark else "stats"
     outstr = None
-    if not regen:
-        outstr = global_dict.get(cacheKey, None)
-        if outstr is None:
-            outstr = memcache.get(cacheKey)
     if outstr is None:
         tq = taskqueue.Queue()
         tqs_r = tq.fetch_statistics_async()
@@ -73,12 +68,6 @@ def rumble_stats():
         categories = ["1v1", "Melee", "Teams"]
 
         for r in q.run():
-            memr = global_dict.get(r.Name, None)
-            if memr is None:
-                memr = memcache.get(r.Name)
-            if memr is not None:
-                r = memr
-
             if r.Melee:
                 rumbles[1].append(r)
             elif r.Teams:
@@ -89,7 +78,7 @@ def rumble_stats():
         for cat, rumbs in zip(categories, rumbles):
             entries_by_id = {}
             for r in rumbs:
-                scores = load_blob(r.ParticipantsScores, {})
+                scores = store.load_scores(r.Name)
                 if not isinstance(scores, dict):
                     scores = {}
                 entries = len(scores)
@@ -154,9 +143,6 @@ def rumble_stats():
         tq_string += "</td></tr>\n</table>\n<br>"
         out.insert(2, tq_string)
         outstr = "".join(out)
-
-    memcache.set(cacheKey, outstr, time=630)
-    global_dict[cacheKey] = outstr
 
     elapsed = time.time() - starttime
     if timing:
