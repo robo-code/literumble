@@ -21,6 +21,8 @@ import HandleQueuedResults
 import RumbleSelect
 import RumbleStats
 
+_log = logging.getLogger("gunicorn.error")  # INFO-level, wired to journald
+
 _app = None
 _started = False
 
@@ -55,21 +57,28 @@ def _worker():
     q = gae_shim._task_queue
     while True:
         url, payload, headers = q.get()
+        start = time.monotonic()
+        status = "ok"
         try:
             fn = _TASK_HANDLERS.get(url)
             if fn is None:
-                logging.error("no local handler for task url " + url)
+                _log.error("no local handler for task url " + url)
+                status = "no-handler"
             else:
                 headers = {**headers, "X-Appengine-TaskName": "local"}
+                status = "error"
                 for attempt in range(3):
                     try:
                         _run(url, fn, method="POST", data=payload, headers=headers)
+                        status = "ok"
                         break
                     except Exception:
-                        logging.exception("task " + url + " failed (attempt " + str(attempt + 1) + ")")
+                        _log.exception("task " + url + " failed (attempt " + str(attempt + 1) + ")")
         finally:
             gae_shim._record_execution()
             q.task_done()
+            _log.info("task %s %s %.0fms qlen=%d", url, status,
+                      (time.monotonic() - start) * 1000, q.qsize())
 
 
 def _scheduler():
