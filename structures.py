@@ -52,7 +52,7 @@ def load_blob(blob, default):
 total = "TOTAL"
 participants = "PARTICIPANTS"
 sync = "SYNCHRONIZE"
-allowed_clients = ["1.10.3"]
+allowed_clients = ["1.10.3", "1.11.0", "1.11.1"]
 allowed_versions = ["1"]
 
 global_dict = {}
