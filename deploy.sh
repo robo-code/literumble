@@ -19,6 +19,10 @@ rsync -az --delete \
 ssh "$HOST" "cd $DIR \
   && venv/bin/pip install -q -r requirements-local.txt \
   && cp deploy/literumble.service /etc/systemd/system/literumble.service \
+  && cp deploy/nginx-rumble-http.conf  /etc/nginx/sites-available/rumble-http \
+  && cp deploy/nginx-rumble-https.conf /etc/nginx/sites-available/rumble-https \
+  && nginx -t \
+  && systemctl reload nginx \
   && systemctl daemon-reload \
   && systemctl restart literumble"
 
