@@ -13,7 +13,7 @@ Environment=LITERUMBLE_DB=/opt/literumble/data/literumble.db
 # --access-logfile - sends the access log to stdout -> journald (journalctl -u
 # literumble). %(L)s is per-request processing time in seconds.
 ExecStart=/opt/literumble/venv/bin/gunicorn wsgi_local:app \
-    -b 127.0.0.1:8081 --workers 1 --threads 16 --timeout 1 \
+    -b 127.0.0.1:8081 --workers 1 --threads 16 --timeout 60 \
     --access-logfile - \
     --access-logformat '%(t)s "%(r)s" %(s)s %(b)sB %(L)ss'
 Restart=on-failure
