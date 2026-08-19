@@ -23,7 +23,13 @@ ssh "$HOST" "cd $DIR \
   && cp deploy/nginx-rumble-http.conf  /etc/nginx/sites-available/rumble-http \
   && cp deploy/nginx-rumble-https.conf /etc/nginx/sites-available/rumble-https \
   && nginx -t \
+  && BEFORE=\$(pgrep -f 'nginx: worker process\$' | sort -n | tr '\n' ' ') \
   && systemctl reload nginx \
+  && sleep 2 \
+  && AFTER=\$(pgrep -f 'nginx: worker process\$' | sort -n | tr '\n' ' ') \
+  && { [ \"\$BEFORE\" != \"\$AFTER\" ] \
+       || { echo 'nginx reload REJECTED (workers never respawned):'; \
+            tail -3 /var/log/nginx/error.log; exit 1; }; } \
   && systemctl daemon-reload \
   && systemctl restart literumble"
 
