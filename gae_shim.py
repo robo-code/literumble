@@ -161,18 +161,21 @@ class _Future:
 
 # SQLite plumbing (single connection, WAL, global write lock)
 _con = None
-_con_lock = threading.Lock()
+_con_lock = threading.RLock()
 _tables = set()
 
 
 def _connect():
     global _con
-    if _con is None:
-        d = os.path.dirname(_DB_PATH)
-        if d:
-            os.makedirs(d, exist_ok=True)
-        _con = sqlite3.connect(_DB_PATH, check_same_thread=False)
-        _con.execute("PRAGMA journal_mode=WAL")
+    with _con_lock:
+        if _con is None:
+            d = os.path.dirname(_DB_PATH)
+            if d:
+                os.makedirs(d, exist_ok=True)
+            con = sqlite3.connect(
+                _DB_PATH, check_same_thread=False, timeout=30)
+            con.execute("PRAGMA journal_mode=WAL")
+            _con = con  # publish only after the PRAGMA succeeded
     return _con
 
 
