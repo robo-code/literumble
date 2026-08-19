@@ -131,6 +131,7 @@ def main():
     # === Scenario: retiring an old participant ===
     # GIVEN Delta 1.0 has entered the rumble (request names underscore spaces)
     upload("Delta 1.0", "Alpha", 30, 70)
+    upload("Delta 1.0", "Charlie", 40, 60)
     background.drain()
     present_before = any(b["name"] == "Delta 1.0"
                          for b in get_json("/Rankings?game=%s&api=1" % GAME))
@@ -156,6 +157,19 @@ def main():
     # THEN Delta was listed before removal and is gone after
     assert paired_before, "Delta should have been one of Alpha's pairings"
     assert "Delta 1.0" not in alpha_opps(), "retired Delta must not show in Alpha's pairings"
+
+    # === Scenario: a retired bot can still be compared by typing its name ===
+    # GIVEN Delta is retired but both it and Alpha fought Charlie
+    # WHEN Delta's name is entered on the comparison page
+    cmp_retired = client.get(
+        "/BotCompare?game=%s&bota=Alpha&botb=Delta 1.0" % GAME).get_data(as_text=True)
+    # THEN the comparison renders against their shared opponent
+    assert "ERROR" not in cmp_retired, cmp_retired[:200]
+    assert "Delta 1.0" in cmp_retired and "Charlie" in cmp_retired, cmp_retired[:400]
+    # AND a name that never fought here is still rejected
+    cmp_bogus = client.get(
+        "/BotCompare?game=%s&bota=Alpha&botb=Nope 9.9" % GAME).get_data(as_text=True)
+    assert "ERROR" in cmp_bogus, cmp_bogus[:200]
 
     # === Scenario: HTML pages render (light and dark theme) ===
     # GIVEN bots exist (the api=1 JSON branches are asserted above); the

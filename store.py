@@ -252,3 +252,13 @@ def replace_pairings(rumble, botname, scoresets):
         for ss in scoresets:
             _put_side(con, rumble, botname, ss)
         con.commit()
+
+
+def has_history(rumble, name):
+    """Retired bots keep their Pairing rows (see RemoveOldParticipant) after their
+    RumbleScore row goes, so this is how you tell "retired" from "typo"."""
+    con = _con()
+    return con.execute(
+        "SELECT 1 FROM Pairing WHERE rumble=? AND lo=? "
+        "UNION ALL SELECT 1 FROM Pairing WHERE rumble=? AND hi=? LIMIT 1",
+        (rumble, name, rumble, name)).fetchone() is not None

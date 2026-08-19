@@ -58,11 +58,20 @@ def bot_compare():
 
     parsetime = time.time() - starttime
 
-    bota = store.load_score(game, botaName)
+    # Only .Name is read off these; every stat on the page comes from the pairings
+    # below. So a retired bot, which has no score row, needs only a name stub.
+    def _side(name):
+        score = store.load_score(game, name)
+        if score is not None:
+            return score
+        return structures.LiteBot(loadDict={"Name": name}) \
+            if store.has_history(game, name) else None
+
+    bota = _side(botaName)
     if bota is None:
         return "ERROR. name/game combination does not exist: " + botaName + "/" + game
 
-    botb = store.load_score(game, botbName)
+    botb = _side(botbName)
     if botb is None:
         return "ERROR. name/game combination does not exist: " + botbName + "/" + game
 
