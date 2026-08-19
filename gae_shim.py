@@ -159,32 +159,33 @@ class _Future:
         return self._value
 
 
-# SQLite plumbing (single connection, WAL, global write lock)
-_con = None
+# One connection per thread (a shared one lets a reader commit a writer's
+# half-finished transaction); RLock because put() nests into _ensure_table().
+_local = threading.local()
 _con_lock = threading.RLock()
 _tables = set()
 
 
 def _connect():
-    global _con
-    with _con_lock:
-        if _con is None:
+    con = getattr(_local, "con", None)
+    if con is None:
+        with _con_lock:
             d = os.path.dirname(_DB_PATH)
             if d:
                 os.makedirs(d, exist_ok=True)
-            con = sqlite3.connect(
-                _DB_PATH, check_same_thread=False, timeout=30)
+            con = sqlite3.connect(_DB_PATH, check_same_thread=False, timeout=30)
             con.execute("PRAGMA journal_mode=WAL")
-            _con = con  # publish only after the PRAGMA succeeded
-    return _con
+        _local.con = con
+    return con
 
 
 def _ensure_table(con, kind):
     if kind not in _tables:
-        con.execute(
-            "CREATE TABLE IF NOT EXISTS %s "
-            "(key_name TEXT PRIMARY KEY, data BLOB)" % kind)
-        con.commit()
+        with _con_lock:
+            con.execute(
+                "CREATE TABLE IF NOT EXISTS %s "
+                "(key_name TEXT PRIMARY KEY, data BLOB)" % kind)
+            con.commit()
         _tables.add(kind)
 
 

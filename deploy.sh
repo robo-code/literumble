@@ -8,6 +8,7 @@ DIR=/opt/literumble
 
 echo "== running e2e tests =="
 venv/bin/python test_e2e.py
+venv/bin/python test_concurrency.py
 
 # App Engine is now just the static redirect forwarder; no need to redeploy it here.
 # gcloud app deploy --project=literumble app.yaml batchratings.yaml cron.yaml
