@@ -24,6 +24,12 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 # because nginx *overwrites* X-Forwarded-For (unspoofable).
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 
+
+@app.before_request
+def _drop_stale_snapshot():
+    gae_shim.reset()
+
+
 # /BatchRankings runs in the batchratings service on GAE (dispatch.yaml); here it
 # is the same process, so the task worker can dispatch to it.
 app.add_url_rule("/BatchRankings", "BatchRankings",

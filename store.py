@@ -42,7 +42,6 @@ def _con():
                     PRIMARY KEY (rumble, lo, hi));
                 CREATE INDEX IF NOT EXISTS Pairing_hi ON Pairing (rumble, hi);
                 """)
-            con.commit()
         _ready = True
     return con
 
@@ -102,28 +101,25 @@ _SCORE_UPSERT = (
 def upsert_scores(rumble, litebots):
     """Write just the given LiteBots (hot path: the 2 changed bots)."""
     con = _con()
-    with gae_shim._con_lock:
+    with gae_shim.write(con):
         con.executemany(_SCORE_UPSERT,
                         [_score_params(rumble, lb) for lb in litebots])
-        con.commit()
 
 
 def replace_scores(rumble, scores):
     """Replace a rumble's entire score set with ``{name: LiteBot}``."""
     con = _con()
-    with gae_shim._con_lock:
+    with gae_shim.write(con):
         con.execute("DELETE FROM RumbleScore WHERE rumble=?", (rumble,))
         con.executemany(_SCORE_UPSERT,
                         [_score_params(rumble, lb) for lb in scores.values()])
-        con.commit()
 
 
 def delete_scores(rumble, names):
     con = _con()
-    with gae_shim._con_lock:
+    with gae_shim.write(con):
         con.executemany("DELETE FROM RumbleScore WHERE rumble=? AND name=?",
                         [(rumble, n) for n in names])
-        con.commit()
 
 
 # ---- pairings: one canonical row per unordered pair -----------------------
@@ -228,19 +224,17 @@ def _put_side(con, rumble, botname, ss):
 def upsert_pairing(rumble, botname, scoreset):
     """Write the single ``botname`` vs ``scoreset.Name`` pair (hot path)."""
     con = _con()
-    with gae_shim._con_lock:
+    with gae_shim.write(con):
         _put_side(con, rumble, botname, scoreset)
-        con.commit()
 
 
 def upsert_pair(rumble, name_a, ss_a, name_b, ss_b):
     """Write both sides of the ``a`` vs ``b`` pair in one commit (hot path).
     ``ss_a`` is a-vs-b from a's perspective, ``ss_b`` the mirror."""
     con = _con()
-    with gae_shim._con_lock:
+    with gae_shim.write(con):
         _put_side(con, rumble, name_a, ss_a)
         _put_side(con, rumble, name_b, ss_b)
-        con.commit()
 
 
 def replace_pairings(rumble, botname, scoresets):
@@ -248,10 +242,9 @@ def replace_pairings(rumble, botname, scoresets):
     opponents dropped from ``scoresets`` are left untouched (pairings are never
     deleted -- kept for historical lookup)."""
     con = _con()
-    with gae_shim._con_lock:
+    with gae_shim.write(con):
         for ss in scoresets:
             _put_side(con, rumble, botname, ss)
-        con.commit()
 
 
 def has_history(rumble, name):

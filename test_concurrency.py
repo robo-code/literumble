@@ -85,9 +85,43 @@ def test_datastore_put_get_and_query_race():
     assert len({t._key_name for t in Thing.all().run()}) == THREADS
 
 
+def test_failed_write_leaves_no_open_transaction():
+    """An open transaction pins the thread's read snapshot: every page it serves
+    afterwards is stale."""
+    con = store._con()
+
+    class Boom(Exception):
+        pass
+
+    try:
+        with gae_shim.write(con):
+            con.execute("DELETE FROM RumbleScore WHERE rumble=?", ("leak",))
+            raise Boom
+    except Boom:
+        pass
+
+    assert not con.in_transaction, "failed write left a transaction open"
+
+    # a rollback that left the snapshot pinned would still pass the check above
+    def other():
+        lb = structures.LiteBot(loadDict={"Name": "after", "Rumble": "leak",
+                                          "Battles": 1, "Pairings": 1, "APS": 1.0,
+                                          "Survival": 1.0, "PL": 0, "VoteScore": 0.0,
+                                          "LastUpload": "2020-01-01 00:00:00",
+                                          "Active": True, "ANPP": 0.0, "APS_CI": -1.0,
+                                          "Uploaders": []})
+        store.upsert_scores("leak", [lb])
+
+    t = threading.Thread(target=other)
+    t.start()
+    t.join()
+    assert store.load_score("leak", "after") is not None, "reader stuck on a stale snapshot"
+
+
 def main():
     test_pair_writes_are_never_torn()
     test_datastore_put_get_and_query_race()
+    test_failed_write_leaves_no_open_transaction()
     print("test_concurrency OK")
 
 

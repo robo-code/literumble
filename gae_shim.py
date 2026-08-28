@@ -12,6 +12,8 @@ single worker thread (see ``background.py``). Everything assumes a single
 process (``gunicorn --workers 1``); concurrency comes from threads.
 """
 import collections
+import contextlib
+import logging
 import os
 import pickle
 import queue
@@ -179,13 +181,37 @@ def _connect():
     return con
 
 
+@contextlib.contextmanager
+def write(con):
+    """A transaction left open by a raising write pins this connection's read
+    snapshot for the life of the thread and holds the write lock, so every later
+    read on it is stale and every other writer gets "database is locked".
+
+    Not nestable: the inner exit would commit the outer body's half-written rows.
+    DDL needs no transaction, so _ensure_table and store's schema setup take
+    _con_lock directly.
+    """
+    with _con_lock, con:   # sqlite3's own commit-or-rollback
+        yield con
+
+
+def reset():
+    """Bounds a leaked transaction to one request rather than the life of the
+    thread. write() should make the rollback unreachable, so it logs: repairing
+    this silently every request would hide the leak that caused it.
+    """
+    con = _connect()
+    if con.in_transaction:
+        logging.error("stale transaction left open on this thread; rolling back")
+        con.rollback()
+
+
 def _ensure_table(con, kind):
     if kind not in _tables:
         with _con_lock:
             con.execute(
                 "CREATE TABLE IF NOT EXISTS %s "
                 "(key_name TEXT PRIMARY KEY, data BLOB)" % kind)
-            con.commit()
         _tables.add(kind)
 
 
@@ -196,15 +222,14 @@ def _dump(entity):
 def put(entities):
     if not isinstance(entities, (list, tuple)):
         entities = [entities]
-    with _con_lock:
-        con = _connect()
+    con = _connect()
+    with write(con):
         for e in entities:
             _ensure_table(con, type(e).__name__)
             blob = pickle.dumps(_dump(e), pickle.HIGHEST_PROTOCOL)
             con.execute(
                 "INSERT OR REPLACE INTO %s (key_name, data) VALUES (?, ?)"
                 % type(e).__name__, (e._key_name, sqlite3.Binary(blob)))
-        con.commit()
     return [e.key() for e in entities]
 
 
@@ -232,14 +257,13 @@ def get_async(key):
 def delete(keys):
     if not isinstance(keys, (list, tuple)):
         keys = [keys]
-    with _con_lock:
-        con = _connect()
+    con = _connect()
+    with write(con):
         for k in keys:
             key = k.key() if isinstance(k, Model) else k
             _ensure_table(con, key.kind)
             con.execute(
                 "DELETE FROM %s WHERE key_name=?" % key.kind, (key.name(),))
-        con.commit()
 
 
 class Key:
