@@ -133,20 +133,32 @@ _PAIR_SELECT = "SELECT " + _PAIR_COLS + " FROM Pairing"
 
 
 def _row_to_scoreset(botname, row):
-    """Build the ScoreSet for ``botname`` (opponent = the other side)."""
+    """Build the ScoreSet for ``botname`` (opponent = the other side).
+
+    NULL directional columns mean the other side was never written (upsert_pairing,
+    restore_retired_pairings) -- left NULL so restore's COALESCE can still fill them.
+    They keep the ScoreSet default, the same value _put_side writes; passing the None
+    through instead reaches float() in _put_side on the next write.
+    """
     lo, hi, aps_lo = row[0], row[1], row[5]
     ss = structures.ScoreSet()
     ss.Battles, ss.Var_APS, ss.LastUpload = row[2], row[3], row[4]
     if botname == lo:
         ss.Name = hi
         ss.APS = aps_lo
-        ss.Survival, ss.Min_APS = row[6], row[8]
-        ss.KNNPBI, ss.NPP = row[10], row[12]
+        surv, min_aps, knnpbi, npp = row[6], row[8], row[10], row[12]
     else:
         ss.Name = lo
         ss.APS = 100.0 - aps_lo
-        ss.Survival, ss.Min_APS = row[7], row[9]
-        ss.KNNPBI, ss.NPP = row[11], row[13]
+        surv, min_aps, knnpbi, npp = row[7], row[9], row[11], row[13]
+    if surv is not None:
+        ss.Survival = surv
+    if min_aps is not None:
+        ss.Min_APS = min_aps
+    if knnpbi is not None:
+        ss.KNNPBI = knnpbi
+    if npp is not None:
+        ss.NPP = npp
     return ss
 
 

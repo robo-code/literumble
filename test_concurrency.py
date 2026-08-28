@@ -118,10 +118,24 @@ def test_failed_write_leaves_no_open_transaction():
     assert store.load_score("leak", "after") is not None, "reader stuck on a stale snapshot"
 
 
+def test_half_written_pairing_reads_back_with_defaults():
+    """A None Survival reaches float() in _put_side and kills the whole
+    BatchRankings pass."""
+    ss = structures.ScoreSet(name="Zeta", aps=60.0, survival=55.0, battles=3)
+    store.upsert_pairing("half", "Alpha", ss)   # only Alpha's side exists
+
+    back = store.load_pairings("half", "Zeta")
+    assert len(back) == 1, back
+    assert back[0].Survival is not None, "NULL column read back as None"
+
+    store.replace_pairings("half", "Zeta", back)
+
+
 def main():
     test_pair_writes_are_never_torn()
     test_datastore_put_get_and_query_race()
     test_failed_write_leaves_no_open_transaction()
+    test_half_written_pairing_reads_back_with_defaults()
     print("test_concurrency OK")
 
 
