@@ -171,6 +171,23 @@ def main():
         "/BotCompare?game=%s&bota=Alpha&botb=Nope 9.9" % GAME).get_data(as_text=True)
     assert "ERROR" in cmp_bogus, cmp_bogus[:200]
 
+    # === Scenario: a retired bot keeps its details page ===
+    # GIVEN Delta is retired but its pairings against Charlie survived
+    # WHEN Delta's details page is opened
+    det_retired = client.get(
+        "/BotDetails?game=%s&name=Delta 1.0" % GAME).get_data(as_text=True)
+    det_json = get_json("/BotDetails?game=%s&name=Delta 1.0&api=1" % GAME)
+    # THEN it renders, listing the opponents it still has history against, with
+    # its own stats rebuilt from those pairings
+    assert "ERROR" not in det_retired, det_retired[:200]
+    assert "Charlie" in det_retired, det_retired[:400]
+    assert det_json["pairings"] > 0 and det_json["battles"] > 0, det_json
+    assert 0.0 <= float(det_json["APS"]) <= 100.0, det_json
+    # AND a name that never fought here is still rejected
+    det_bogus = client.get(
+        "/BotDetails?game=%s&name=Nope 9.9" % GAME).get_data(as_text=True)
+    assert "ERROR" in det_bogus, det_bogus[:200]
+
     # === Scenario: HTML pages render (light and dark theme) ===
     # GIVEN bots exist (the api=1 JSON branches are asserted above); the
     # landing/stats pages show the rumble name, the ranking pages show the bot

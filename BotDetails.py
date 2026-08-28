@@ -10,6 +10,31 @@ import structures
 from structures import global_dict, load_blob
 
 
+def _retired_score(game, name, pairings):
+    """A LiteBot for a bot whose RumbleScore row is gone, or None if it never had
+    one here. Every field is the same aggregate over live pairings that
+    BatchRankings would have written; the batch-only figures (ANPP, Vote, APS_CI)
+    have no pairing to come from and stay at their unset -1."""
+    if not pairings:
+        return None
+    apss = [float(p.APS) for p in pairings]
+    return structures.LiteBot(loadDict={
+        "Name": name,
+        "Rumble": game,
+        "Active": False,
+        "Pairings": len(pairings),
+        "Battles": sum(int(p.Battles) for p in pairings),
+        "APS": sum(apss) / len(apss),
+        "Survival": sum(float(p.Survival) for p in pairings) / len(pairings),
+        "PL": sum((a > 50.0) - (a < 50.0) for a in apss),
+        "LastUpload": max(str(p.LastUpload) for p in pairings),
+        "ANPP": -1.0,
+        "VoteScore": -1.0,
+        "APS_CI": -1.0,
+        "Uploaders": [],
+    })
+
+
 def bot_details():
     starttime = time.time()
     query = request.query_string.decode('utf-8').replace("%20", " ")
@@ -56,6 +81,14 @@ def bot_details():
     cached = False
     bot = store.load_score(game, name)
 
+    # A retired bot keeps its Pairing rows but loses its RumbleScore row, so its
+    # own columns have to come back off the pairings that outlived it. Loaded
+    # here rather than below so the retired path doesn't read them twice.
+    retiredPairings = None
+    if bot is None:
+        retiredPairings = store.load_pairings_alive(game, name)
+        bot = _retired_score(game, name, retiredPairings)
+
     rumble = None
     if not api:
         rumble = global_dict.get(game, None)
@@ -83,7 +116,8 @@ def bot_details():
     if lim > 0 or not api:
         # join to RumbleScore: only opponents still in the rumble (dead pairings are
         # kept for history but not shown), each carrying the opponent's OppAPS/OppSurvival.
-        bots = store.load_pairings_alive(game, name)
+        bots = (retiredPairings if retiredPairings is not None
+                else store.load_pairings_alive(game, name))
 
         removes = []
         for b in bots:
