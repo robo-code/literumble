@@ -20,20 +20,34 @@ def fmt(v):
 
 rolling_battle_cap = 10000 // 2  # n_eff cap; matches the upload-handler rolling window
 
+prior_var = 16.0
+prior_battles = 3.0
+
 
 def pairing_ci(scoreset):
-    """95% CI half-width on a pairing's APS, or None until it has >= 2 battles
-    (a single battle gives a degenerate Var_APS of 0)."""
+    """95% CI half-width on a pairing's APS, or None until it has >= 1 battle."""
+    battles = _battles(scoreset)
+    if battles < 1:
+        return None
+    return 1.96 * math.sqrt(pairing_var(scoreset, battles) / min(battles, rolling_battle_cap))
+
+
+def pairing_var(scoreset, battles=None):
+    """Per-battle APS variance, shrunk toward the prior so it is never 0."""
     var = getattr(scoreset, "Var_APS", -1.0)
     if var is None or var < 0:
-        return None
+        return prior_var
+    if battles is None:
+        battles = _battles(scoreset)
+    n = max(0, min(battles, rolling_battle_cap) - 1)
+    return (prior_battles * prior_var + n * var) / (prior_battles + n)
+
+
+def _battles(scoreset):
     try:
-        battles = int(scoreset.Battles)
+        return int(scoreset.Battles)
     except (TypeError, ValueError, AttributeError):
-        return None
-    if battles < 2:
-        return None
-    return 1.96 * math.sqrt(max(0.0, var) / (min(battles, rolling_battle_cap) - 1))
+        return 0
 
 
 def load_blob(blob, default):
@@ -421,3 +435,19 @@ country_lookup = {
  "ZMB" : "Zambia",
  "ZWE" : "Zimbabwe"
 }
+
+
+def _selfcheck():
+    class S: pass
+    def s(b, v):
+        x = S(); x.Battles = b; x.Var_APS = v; return x
+    assert pairing_ci(s(0, -1.0)) is None
+    lucky = pairing_ci(s(3, 0.0))
+    assert lucky > 0, lucky
+    assert lucky > pairing_ci(s(30, 0.0))
+    assert abs(pairing_var(s(500, 400.0)) - 400.0) < 5.0
+
+
+if __name__ == "__main__":
+    _selfcheck()
+    print("structures selfcheck OK")

@@ -385,9 +385,9 @@ def handle_queued_results():
                 cap = structures.rolling_battle_cap
                 def reduction(p):
                     n = min(int(p.Battles), cap)
-                    base = max(0.0, p.Var_APS) / (n * (n + 1.0))
-                    ci = structures.pairing_ci(p)
-                    if ci is not None and abs(p.APS - 50.0) < ci:
+                    var = structures.pairing_var(p, n)
+                    base = var / (n * (n + 1.0))
+                    if abs(p.APS - 50.0) < 1.96 * math.sqrt(var / n):
                         base *= 10.0
                     return base
                 scored = [(reduction(p), p) for p in alive]

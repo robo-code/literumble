@@ -56,6 +56,8 @@ def get_json(path):
 
 
 def main():
+    structures._selfcheck()
+
     # This is one cumulative flow: each scenario's GIVEN is the state the ones
     # above it left behind (a fresh empty DB seeded battle by battle).
 
@@ -113,6 +115,21 @@ def main():
     # THEN all three bots show up in the comparison
     for n in ("Alpha", "Bravo", "Charlie"):
         assert n in cmp_html, "BotCompare missing %s" % n
+
+    # === Scenario: the server recommends a priority battle ===
+    # GIVEN all three bots are paired and one pairing has zero sample variance
+    upload("Alpha", "Bravo", 60, 40)
+    upload("Alpha", "Bravo", 60, 40)
+    background.drain()
+    # WHEN a further battle is uploaded, picking up the queued recommendation
+    body = upload("Alpha", "Charlie", 55, 45)
+    background.drain()
+    # THEN the response leads with a [BotA,BotB] pairing of two distinct bots
+    assert body.startswith("["), "no priority battle returned: %r" % body
+    pair = body[1:body.index("]")].split(",")
+    known = {"Alpha", "Bravo", "Charlie"}
+    assert len(pair) == 2 and pair[0] != pair[1], body
+    assert set(p.replace("_", " ") for p in pair) <= known, body
 
     # === Scenario: data survives across processes ===
     # GIVEN battles written to the SQLite file
