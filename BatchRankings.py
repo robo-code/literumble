@@ -181,9 +181,9 @@ def batch_rankings():
 
                         aliveCount += 1
 
-                        pvar = p.__dict__.get("Var_APS", -1.0)
-                        if pvar is not None and pvar >= 0 and int(p.Battles) >= 2:
-                            ci_var_sum += max(0.0, pvar) / (min(int(p.Battles), maxPerPair) - 1)
+                        pn = min(int(p.Battles), maxPerPair)
+                        if pn >= 1:
+                            ci_var_sum += structures.pairing_var(p, pn) / pn
                             ci_count += 1
                         p.KNNPBI = float(KNN_PBI[j, i])
                         p.NPP = float(NPPs[j, i])

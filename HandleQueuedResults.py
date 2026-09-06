@@ -217,9 +217,9 @@ def handle_queued_results():
                     battles += p.Battles
                     alivePairings += 1
 
-                    pvar = p.__dict__.get("Var_APS", -1.0)
-                    if pvar is not None and pvar >= 0 and int(p.Battles) >= 2:
-                        ci_var_sum += max(0.0, pvar) / (min(int(p.Battles), maxPerPair) - 1)
+                    pn = min(int(p.Battles), maxPerPair)
+                    if pn >= 1:
+                        ci_var_sum += structures.pairing_var(p, pn) / pn
                         ci_count += 1
 
             if alivePairings > 0:
@@ -353,22 +353,27 @@ def handle_queued_results():
                 else:
                     logging.info("unsuccessful local search for new pair")
         else:
-            minBattles = 1.1 * min([b.Battles for b in scoreVals if b.Active])
-            possBots = [b for b in scoreVals if b.Battles <= minBattles and b.Active]
+            active = [b for b in scoreVals if b.Active]
+            unmeasured = [b for b in active if getattr(b, "APS_CI", -1.0) < 0]
+            if unmeasured:
+                priobot = random.choice(unmeasured)
+            else:
+                point = random.uniform(0, sum(b.APS_CI for b in active))
+                running = 0.0
+                priobot = active[-1]
+                for b in active:
+                    running += b.APS_CI
+                    if running >= point:
+                        priobot = b
+                        break
 
-            names = [b.Name for b in possBots]
-            if bots[1].Name not in names and bots[0].Name not in names:
-                priobot = random.choice(possBots)
-
+            if priobot.Name == bots[0].Name:
+                priopairs = pairingsarray[0]
+            elif priobot.Name == bots[1].Name:
+                priopairs = pairingsarray[1]
+            else:
                 priopairs = store.load_pairings(rumble, priobot.Name)
                 logging.info("loaded pairings for global search")
-
-            elif bots[0].Battles <= bots[1].Battles:
-                priobot = bots[0]
-                priopairs = pairingsarray[0]
-            else:
-                priobot = bots[1]
-                priopairs = pairingsarray[1]
 
         if priobot2 is None and priopairs is not None and priobot is not None:
             alive = [p for p in priopairs
