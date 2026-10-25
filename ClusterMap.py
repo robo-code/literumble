@@ -119,8 +119,7 @@ def cluster_map():
     if not points:
         out.append("No cluster map yet; it is computed by the batch rankings.</body></html>")
         return "".join(out)
-    out.append("""<p>t-SNE of pairwise scores and survival, with overall strength factored out: nearby bots
-beat and lose to the same opponents, and are about as consistent. Colour is APS. Click a dot for its details.</p>
+    out.append("""<p>Nearby bots have similar styles, whatever their strength. Colour is APS; click a dot for details.</p>
 <canvas id="map" width="700" height="700" style="border: black 1px solid; max-width: 100%; cursor: pointer;"></canvas>
 <div style="display:flex;align-items:center;gap:6px;font-size:12px;max-width:700px">
 <span id="lo"></span><div id="legend" style="flex:1;height:10px"></div><span id="hi"></span> APS</div>
