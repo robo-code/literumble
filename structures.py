@@ -39,7 +39,12 @@ def pairing_var(scoreset, battles=None):
         return prior_var
     if battles is None:
         battles = _battles(scoreset)
-    n = max(0, min(battles, rolling_battle_cap) - 1)
+    return shrink_var(var, max(0, min(battles, rolling_battle_cap) - 1))
+
+
+def shrink_var(var, n):
+    """``var`` from ``n`` battles shrunk toward the prior; plain arithmetic so it
+    also takes numpy arrays (BatchRankings)."""
     return (prior_battles * prior_var + n * var) / (prior_battles + n)
 
 

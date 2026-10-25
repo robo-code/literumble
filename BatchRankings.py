@@ -1,9 +1,6 @@
 #!/usr/bin/env python
-import datetime
-import gc
 import logging
 import math
-import sys
 import time
 from operator import attrgetter
 
@@ -34,9 +31,6 @@ def start_backend():
 def batch_rankings():
     starttime = time.time()
     try:
-        cutoff_date = datetime.datetime.now() + datetime.timedelta(-365)
-        cutoff_date_string = cutoff_date.strftime("%Y-%m-%d %H:%M:%S")
-
         parts = request.get_data().decode('utf-8').split("&")
         requests = {}
 
@@ -69,53 +63,26 @@ def batch_rankings():
             get_key = attrgetter("APS")
             bots.sort(key=lambda b: get_key(b), reverse=True)
 
-            gc.collect()
-
-            botIndexes = {}
-            for i, b in enumerate(bots):
-                sys.intern(b.Name)
-                botIndexes[b.Name] = i
+            botIndexes = {b.Name: i for i, b in enumerate(bots)}
+            for b in bots:
                 b.VoteScore = 0.
 
             botlen = len(bots)
             APSs = numpy.empty([botlen, botlen])
             APSs.fill(numpy.nan)
-            totalAlivePairs = 0
-            for i, b in enumerate(bots):
-                pairings = store.load_pairings(r.Name, b.Name)
-                removes = []
-                alivePairings = 0
-                for q_idx, p in enumerate(pairings):
-                    j = botIndexes.get(p.Name, -1)
-                    if j != -1:
-                        APSs[j, i] = numpy.float64(p.APS)
-                        p.Alive = True
-                        alivePairings += 1
-                    else:
-                        removes.append(q_idx)
-                b.Pairings = alivePairings
-                totalAlivePairs += alivePairings
-                removes.reverse()
-                removed = False
-                for q_idx in removes:
-                    p = pairings[q_idx]
-                    if p.LastUpload < cutoff_date_string:
-                        removed = True
-                        pairings.pop(q_idx)
-                    else:
-                        if p.Alive:
-                            removed = True
-                        p.Alive = False
-                # pairings are never deleted (kept for history); no persist here
-
-            gc.collect()
-
-            APSs += numpy.float64(100) - APSs.transpose()
-            APSs *= numpy.float64(0.5)
+            # one row per pair; each side is (me, opp); alive = both still in the rumble
+            rowid, lo, hi, aps_lo, battles, var_aps, *derived = store.load_pair_table(r.Name, botIndexes)
+            alive = (lo >= 0) & (hi >= 0)
+            sides = ((lo, hi), (hi, lo))
+            APSs[hi[alive], lo[alive]] = aps_lo[alive]
+            APSs[lo[alive], hi[alive]] = 100.0 - aps_lo[alive]
+            pairCounts = sum(numpy.bincount(me[alive], minlength=botlen) for me, _ in sides)
+            for b, c in zip(bots, pairCounts):
+                b.Pairings = int(c)
+            totalAlivePairs = int(pairCounts.sum())
 
             numpy.fill_diagonal(APSs, numpy.nan)
 
-            gc.collect()
             logging.info(str(len(bots)) + " bots loaded, total of " + str(totalAlivePairs) + " alive pairings")
 
             # Vote
@@ -160,68 +127,45 @@ def batch_rankings():
                 else:
                     NPPs[i, :] = numpy.float64(100)
 
-            maxPerPair = structures.rolling_battle_cap
+            # structures.pairing_var, vectorised; NaN var_aps (NULL) fails >= 0 -> prior
+            pn = numpy.minimum(battles, structures.rolling_battle_cap)
+            with numpy.errstate(invalid='ignore', divide='ignore'):
+                pvar = numpy.where(var_aps >= 0, structures.shrink_var(var_aps, numpy.maximum(0, pn - 1)),
+                                   structures.prior_var) / pn
+            hasCI = alive & (pn >= 1)
+
+            def per_bot(masks, vals=(None, None)):  # each bot's sum of vals (or count) over its sides in mask
+                return sum(numpy.bincount(me[m], None if v is None else v[m], botlen)
+                           for (me, _), v, m in zip(sides, vals, masks))
+
+            ix = [(opp.clip(0), me.clip(0)) for me, opp in sides]  # dead -> 0, masked by alive
+            sideNPP = [NPPs[i] for i in ix]
+            sideKNN = [KNN_PBI[i] for i in ix]
+            apsOK = [alive & ~numpy.isnan(aps_lo) & (lo != hi)] * 2  # self-pair = NaN diagonal
+            nppOK = [alive & ~numpy.isnan(v) for v in sideNPP]
+            totalAPS, apsCount = per_bot(apsOK, [aps_lo, 100.0 - aps_lo]), per_bot(apsOK)
+            totalNPP, nppCount = per_bot(nppOK, sideNPP), per_bot(nppOK)
+            ciSum, ciCount = per_bot([hasCI] * 2, [pvar] * 2), per_bot([hasCI] * 2)
             for i, b in enumerate(bots):
-                pairings = store.load_pairings(r.Name, b.Name)
-                nppCount = 0
-                totalNPP = 0.0
-
-                apsCount = 0
-                totalAPS = 0.0
-
-                aliveCount = 0
-
-                ci_var_sum = 0.0
-                ci_count = 0
-
-                for p in pairings:
-                    j = botIndexes.get(p.Name, -1)
-                    if j != -1:
-                        p.Alive = True
-
-                        aliveCount += 1
-
-                        pn = min(int(p.Battles), maxPerPair)
-                        if pn >= 1:
-                            ci_var_sum += structures.pairing_var(p, pn) / pn
-                            ci_count += 1
-                        p.KNNPBI = float(KNN_PBI[j, i])
-                        p.NPP = float(NPPs[j, i])
-
-                        if not numpy.isnan(APSs[j, i]):
-                            p.APS = float(APSs[j, i])
-                            totalAPS += p.APS
-                            apsCount += 1
-
-                        if numpy.isnan(p.KNNPBI):
-                            p.KNNPBI = 0
-
-                        if numpy.isnan(p.NPP):
-                            p.NPP = -1
-                        else:
-                            totalNPP += p.NPP
-                            nppCount += 1
-                    else:
-                        p.Alive = False
-                        p.KNNPBI = 0
-                        p.NPP = -1
-
-                if nppCount > 0:
-                    b.ANPP = float(totalNPP / nppCount)
-                else:
-                    b.ANPP = -1.0
-                if apsCount > 0:
-                    b.APS = float(totalAPS / apsCount)
-                else:
-                    b.APS = -1.0
-
-                if ci_count > 0 and aliveCount > 0:
-                    b.APS_CI = 1.96 * math.sqrt(ci_var_sum / (aliveCount * ci_count))
+                b.ANPP = float(totalNPP[i] / nppCount[i]) if nppCount[i] > 0 else -1.0
+                b.APS = float(totalAPS[i] / apsCount[i]) if apsCount[i] > 0 else -1.0
+                if ciCount[i] > 0 and pairCounts[i] > 0:
+                    b.APS_CI = 1.96 * math.sqrt(ciSum[i] / (pairCounts[i] * ciCount[i]))
                 else:
                     b.APS_CI = -1.0
 
-                store.replace_pairings(r.Name, b.Name, pairings)
-                b.Pairings = aliveCount
+            # current bots' sides get KNNPBI/NPP (store.DEAD_* vs a retired bot); write changed rows only
+            new = [c.copy() for c in derived]  # store.DERIVED_COLS order
+            newKNN, newNPP = new[:2], new[2:]
+            for s, (me, opp) in enumerate(sides):
+                mine = me >= 0
+                newKNN[s][mine], newNPP[s][mine] = store.DEAD_KNNPBI, store.DEAD_NPP
+                newKNN[s][alive] = numpy.nan_to_num(sideKNN[s][alive], nan=store.DEAD_KNNPBI)
+                newNPP[s][alive] = numpy.where(nppOK[s][alive], sideNPP[s][alive], store.DEAD_NPP)
+            changed = numpy.zeros(len(rowid), bool)
+            for old, upd in zip(derived, new):
+                changed |= ~numpy.isclose(old, upd, rtol=0, atol=0, equal_nan=True)
+            store.update_pair_derived([c[changed] for c in new + [rowid]])
 
             KNN_PBI = None
             APSs = None

@@ -119,8 +119,8 @@ def test_failed_write_leaves_no_open_transaction():
 
 
 def test_half_written_pairing_reads_back_with_defaults():
-    """A None Survival reaches float() in _put_side and kills the whole
-    BatchRankings pass."""
+    """A None Survival reaching float() in _put_side kills the next upload of
+    the pair."""
     ss = structures.ScoreSet(name="Zeta", aps=60.0, survival=55.0, battles=3)
     store.upsert_pairing("half", "Alpha", ss)   # only Alpha's side exists
 
@@ -128,7 +128,7 @@ def test_half_written_pairing_reads_back_with_defaults():
     assert len(back) == 1, back
     assert back[0].Survival is not None, "NULL column read back as None"
 
-    store.replace_pairings("half", "Zeta", back)
+    store.upsert_pairing("half", "Zeta", back[0])
 
 
 def main():

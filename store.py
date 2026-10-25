@@ -11,6 +11,8 @@ LiteBot/ScoreSet are the in-memory interchange type callers get back.
 """
 import json
 
+import numpy
+
 import gae_shim
 import structures
 
@@ -263,14 +265,43 @@ def upsert_pair(rumble, name_a, ss_a, name_b, ss_b):
         _put_side(con, rumble, name_b, ss_b)
 
 
-def replace_pairings(rumble, botname, scoresets):
-    """Rewrite all of ``botname``'s pairing sides (BatchRankings). Rows for
-    opponents dropped from ``scoresets`` are left untouched (pairings are never
-    deleted -- kept for historical lookup)."""
+# what BatchRankings recomputes per side, and its value for a side whose opponent retired
+DERIVED_COLS = ("knnpbi_lo", "knnpbi_hi", "npp_lo", "npp_hi")
+DEAD_KNNPBI, DEAD_NPP = 0.0, -1.0
+
+
+def load_pair_table(rumble, index):
+    """The Pairing rows of ``rumble`` BatchRankings must look at, as numpy columns:
+    rowid, lo, hi, aps_lo, battles, var_aps, then DERIVED_COLS. lo/hi come back as
+    ``index[name]`` (-1 if absent), NULL as NaN. Rows against retired bots whose
+    current side already reads DEAD_* are skipped."""
+    cur = _con().execute(
+        "SELECT rowid,lo,hi,aps_lo,battles,var_aps," + ",".join(DERIVED_COLS) +
+        " FROM Pairing WHERE rumble=?", (rumble,))
+    chunks = [[numpy.empty(0, int)] * 3 + [numpy.empty(0)] * 7]
+    while True:
+        rows = cur.fetchmany(100000)
+        if not rows:
+            break
+        rid, lo, hi, *rest = zip(*rows)
+        lo = numpy.array([index.get(n, -1) for n in lo], int)
+        hi = numpy.array([index.get(n, -1) for n in hi], int)
+        rest = [numpy.array(c, float) for c in rest]
+        kl, kh, nl, nh = rest[3:]
+        keep = (((lo >= 0) & (hi >= 0)) | ((lo >= 0) & ((kl != DEAD_KNNPBI) | (nl != DEAD_NPP)))
+                | ((hi >= 0) & ((kh != DEAD_KNNPBI) | (nh != DEAD_NPP))))
+        chunks.append([c[keep] for c in [numpy.array(rid), lo, hi] + rest])
+    return [numpy.concatenate(c) for c in zip(*chunks)]
+
+
+def update_pair_derived(cols, chunk=20000):
+    """``DERIVED_COLS + (rowid,)`` numpy columns (NaN binds as NULL), written in
+    chunks so uploads can interleave. rowids are only valid until a VACUUM."""
     con = _con()
-    with gae_shim.write(con):
-        for ss in scoresets:
-            _put_side(con, rumble, botname, ss)
+    sql = "UPDATE Pairing SET " + ",".join(c + "=?" for c in DERIVED_COLS) + " WHERE rowid=?"
+    for k in range(0, len(cols[0]), chunk):
+        with gae_shim.write(con):
+            con.executemany(sql, zip(*(c[k:k + chunk].tolist() for c in cols)))
 
 
 def has_history(rumble, name):
@@ -281,3 +312,4 @@ def has_history(rumble, name):
         "SELECT 1 FROM Pairing WHERE rumble=? AND lo=? "
         "UNION ALL SELECT 1 FROM Pairing WHERE rumble=? AND hi=? LIMIT 1",
         (rumble, name, rumble, name)).fetchone() is not None
+
