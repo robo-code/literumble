@@ -43,12 +43,13 @@ def _volatility_rank(aps, var):
     return numpy.argsort(numpy.argsort(t)) / max(len(t) - 1.0, 1.0)
 
 
-def spectral_embed(aps, surv, var, knn=10):
+def spectral_embed(aps, surv, var, prev=None, knn=10):
     """2D map of bots by style. All args are ``[j, i]`` = bot i vs bot j (NaN =
     unplayed), the BatchRankings APSs layout. Two bots are similar when their
     surprises point the same way, nudged toward bots of similar volatility.
     Returns ``[(x, y)]`` per bot: a t-SNE layout of the kNN similarity graph,
-    started from its Laplacian eigenmap.
+    started from ``prev`` (the last map's ``(x, y)`` or None per bot) so it
+    stays put between runs, else from the graph's Laplacian eigenmap.
     """
     n = aps.shape[0]
     if n <= knn:
@@ -68,6 +69,19 @@ def spectral_embed(aps, surv, var, knn=10):
     W[rows, nearest] = numpy.maximum(C[rows, nearest], 0)
     del C
     W = numpy.maximum(W, W.T)
+
+    known = numpy.array([p is not None for p in prev]) if prev is not None else numpy.zeros(n, bool)
+    old = numpy.array([prev[i] for i in numpy.flatnonzero(known)]).reshape(-1, 2)
+    if known.sum() > n // 2 and numpy.ptp(old, 0).min() > 0:
+        Y = numpy.zeros((n, 2))
+        Y[known] = old
+        # newcomers start among the known bots they resemble
+        Wn = W[~known][:, known]
+        s = Wn.sum(1, keepdims=True)
+        Y[~known] = numpy.where(s > 0, Wn @ Y[known] / numpy.where(s > 0, s, 1), Y[known].mean(0))
+        xy = _tsne(W, Y, iters=300, exaggerate=0)
+        return [(float(x), float(y)) for x, y in xy]
+
     Wc = W + 1e-4 / n  # tiny global link keeps the graph connected
     numpy.fill_diagonal(Wc, 0)
     inv_sqrt_deg = 1 / numpy.sqrt(Wc.sum(1))
@@ -78,19 +92,20 @@ def spectral_embed(aps, surv, var, knn=10):
 
     # the spectrum is flat (~10 similar dims), so 2 eigenvectors alone clump small
     # families; t-SNE keeps neighbourhoods, the eigenmap init the global layout
-    xy = _tsne(W, vecs[:, 1:3] * inv_sqrt_deg[:, None])
+    Y = vecs[:, 1:3] * inv_sqrt_deg[:, None]
+    xy = _tsne(W, Y / Y.std(0) * 1e-2 * numpy.sqrt(n))
     return [(float(x), float(y)) for x, y in xy]
 
 
-def _tsne(P, Y, iters=750, lr=200.0):
+def _tsne(P, Y, iters=750, lr=200.0, exaggerate=250):
     """Exact t-SNE (van der Maaten 2008) for a given symmetric affinity P from
     init Y."""
     P = (P / P.sum()).astype(numpy.float32)
-    Y = (Y / Y.std(0) * 1e-2 * numpy.sqrt(len(P))).astype(numpy.float32)
+    Y = Y.astype(numpy.float32)
     upd = numpy.zeros_like(Y)
     gains = numpy.ones_like(Y)
     for it in range(iters):
-        early = it < 250
+        early = it < exaggerate
         sq = (Y * Y).sum(1)
         Q = 1 / (1 + numpy.maximum(sq[:, None] + sq[None, :] - 2 * Y @ Y.T, 0))
         numpy.fill_diagonal(Q, 0)
@@ -202,4 +217,19 @@ if __name__ == "__main__":
     numpy.fill_diagonal(d, numpy.inf)
     pure = (style[d.argmin(1)] == style).mean()
     assert pure > 0.9, pure  # chance is ~0.33
-    print("ok", pure)
+    # warm starts from the last map keep it put on slightly different scores, and
+    # place a newcomer (the last bot) among its own style
+    def warm(aps, prev):
+        return numpy.array(spectral_embed(aps, aps, numpy.ones((n, n)), prev=[p if p is None else tuple(p) for p in prev]))
+    xy1 = warm(A, xy)  # the first warm run lets the cold layout settle
+    N = numpy.triu(rng.randn(n, n) * 0.2, 1)
+    xy2 = warm(A + N - N.T, list(xy1[:-1]) + [None])
+    def unit(a):  # the page rescales the map to fit, so compare at unit size
+        a = a - a.mean(0)
+        return a / numpy.sqrt((a * a).sum(1).mean())
+    move = numpy.median(numpy.sqrt(((unit(xy2) - unit(xy1)) ** 2).sum(1)))
+    assert move < 0.15, move
+    d = ((xy2[:, None] - xy2[None]) ** 2).sum(2)
+    numpy.fill_diagonal(d, numpy.inf)
+    assert (style[d.argmin(1)] == style).mean() > 0.9 and style[d[-1].argmin()] == style[-1]
+    print("ok", pure, move)

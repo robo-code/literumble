@@ -93,7 +93,8 @@ def batch_rankings():
                 VARs = numpy.full_like(APSs, numpy.nan)
                 pair &= var_aps >= 0
                 VARs[hi[pair], lo[pair]] = VARs[lo[pair], hi[pair]] = var_aps[pair]
-                coords = ClusterMap.spectral_embed(APSs, SURVs, VARs)
+                prev = store.load_cluster_map(r.Name)
+                coords = ClusterMap.spectral_embed(APSs, SURVs, VARs, [prev.get(b.Name) for b in bots])
                 SURVs = VARs = None
                 store.save_cluster_map(r.Name, {b.Name: c for b, c in zip(bots, coords)})
             except Exception:
