@@ -69,7 +69,7 @@ def bot_details():
         extraArgs += "&amp;theme=dark"
     reverseSort = True
 
-    if order is None or order.replace(" ", "") == "":
+    if api or order is None or order.replace(" ", "").lstrip("-") == "":
         order = "Name"
         reverseSort = False
     elif order[0] == "-":
@@ -158,7 +158,7 @@ def bot_details():
             bots = sorted(bots, key=lambda b: ci(b) if ci(b) is not None else -1.0, reverse=reverseSort)
         else:
             if bots and order not in bots[0].__dict__:
-                order = "Name"
+                return Response("ERROR: UNKNOWN order=" + order, status=400, mimetype="text/plain")
             bots = sorted(bots, key=attrgetter(order), reverse=reverseSort)
 
     if api:

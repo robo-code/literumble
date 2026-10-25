@@ -6,6 +6,7 @@ failure). In-process via Flask's test client -- no sockets, no sleeping.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -224,6 +225,30 @@ def main():
             html = client.get(p).get_data(as_text=True)
             # THEN its expected content is present
             assert needle in html, "%s missing %s:\n%s" % (p, needle, html[:200])
+
+    # === Scenario: sorting by a column ===
+    # GIVEN the ranking and details pages, each with a sort link per column
+    def sort_links(path):
+        html = client.get(path).get_data(as_text=True)
+        return set(re.findall(r'href="((?:Rankings|BotDetails)\?[^"]*order=[^"]*)"', html.replace("&amp;", "&")))
+    rank_links = sort_links("/Rankings?game=%s" % GAME)
+    detail_links = sort_links("/BotDetails?game=%s&name=Alpha" % GAME)
+    # WHEN every sort link is followed
+    # THEN each sorts (incl. Latest Battle and the Opponent columns via their attrs)
+    assert len(rank_links) >= 10 and len(detail_links) >= 10, (rank_links, detail_links)
+    for link in rank_links | detail_links | sort_links("/BotDetails?game=%s&name=Alpha&order=Name" % GAME):
+        assert client.get("/" + link).status_code == 200, link
+    # AND a leading '-' flips the order
+    def first_bot(path):
+        return re.search(r'BotDetails\?game=%s&amp;name=(\w+)' % GAME, client.get(path).get_data(as_text=True)).group(1)
+    assert first_bot("/Rankings?game=%s&order=APS" % GAME) == "Alpha"
+    assert first_bot("/Rankings?game=%s&order=-APS" % GAME) != "Alpha"
+    # AND an unknown column is a bad request, while the APIs ignore order
+    assert client.get("/Rankings?game=%s&order=Latest+Battle" % GAME).status_code == 400
+    assert client.get("/BotDetails?game=%s&name=Alpha&order=bogus" % GAME).status_code == 400
+    assert get_json("/Rankings?game=%s&api=1&order=bogus" % GAME) == get_json("/Rankings?game=%s&api=1" % GAME)
+    assert get_json("/BotDetails?game=%s&name=Alpha&api=1&order=-bogus" % GAME) == get_json(
+        "/BotDetails?game=%s&name=Alpha&api=1" % GAME)
 
     # === Scenario: RatingsFile feed for roborumble (RATINGS.URL) ===
     # GIVEN bots exist and Delta has been retired

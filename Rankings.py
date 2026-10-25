@@ -35,7 +35,7 @@ def rankings():
         extraArgs += "&amp;limit=" + str(lim)
 
     reverseSort = True
-    if len(order) == 0:
+    if api or len(order) == 0:
         order = "APS"
     if order[0] == "-":
         order = order[1:]
@@ -85,6 +85,8 @@ def rankings():
         else:
             b.Flag = "NONE"
 
+    if bots and not hasattr(bots[0], order):
+        return Response("ERROR: UNKNOWN order=" + order, status=400, mimetype="text/plain")
     get_key = attrgetter(order)
     bots.sort(key=lambda b: get_key(b), reverse=reverseSort)
 
