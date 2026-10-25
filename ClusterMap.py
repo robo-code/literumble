@@ -120,7 +120,7 @@ def cluster_map():
         out.append("No cluster map yet; it is computed by the batch rankings.</body></html>")
         return "".join(out)
     out.append("""<p>Nearby bots have similar styles, whatever their strength. Colour is APS; click a dot for details.</p>
-<canvas id="map" width="700" height="700" style="border: black 1px solid; max-width: 100%; cursor: pointer;"></canvas>
+<canvas id="map" width="700" height="700" style="max-width: 100%; cursor: pointer;"></canvas>
 <div style="display:flex;align-items:center;gap:6px;font-size:12px;max-width:700px">
 <span id="lo"></span><div id="legend" style="flex:1;height:10px"></div><span id="hi"></span> APS</div>
 <div id="tip" style="position:fixed;padding:1px 4px;font-size:12px;pointer-events:none;display:none"></div>
@@ -131,6 +131,7 @@ def cluster_map():
   var PL = ['#0d0887','#47039f','#7301a8','#9c179e','#bd3786','#d8576b','#ed7953','#fb9f3a','#fdca26','#f0f921'];
   var canvas = document.getElementById('map'), ctx = canvas.getContext('2d'), tip = document.getElementById('tip');
   var dark = document.body.classList.contains('dark');
+  if (dark) PL = PL.slice(2);  // darkest blues vanish on the dark background
   var S = canvas.width, M = 10;
   function range(k) { var a = P.map(function(p) { return p[k]; }); return [Math.min.apply(null, a), Math.max.apply(null, a)]; }
   var rx = range(1), ry = range(2), ra = range(3);

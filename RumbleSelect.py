@@ -53,13 +53,14 @@ def rumble_select():
             rumbs.sort(key=lambda r: -r.__dict__["entries"])
 
             out.append("<table class=\"rumble\">\n<tr>")
-            out.append("\n<th colspan=\"2\">" + cat + "</th>\n<th>Participants</th>\n</tr>")
+            out.append("\n<th colspan=\"3\">" + cat + "</th>\n<th>Participants</th>\n</tr>")
 
             for i, r in enumerate(rumbs):
                 game = r.Name
                 gameHref = "<a href=\"Rankings?game=" + game + extraArgs + "\" >" + game + "</a>"
                 topHref = "<a href=\"Rankings?game=" + game + "&amp;limit=50" + extraArgs + "\" >top 50</a>"
-                out.append("\n<tr>\n<td>" + gameHref + "</td>\n<td>" + topHref + "</td>\n<td>")
+                mapHref = "<a href=\"ClusterMap?game=" + game + extraArgs + "\" >map</a>"
+                out.append("\n<tr>\n<td>" + gameHref + "</td>\n<td>" + topHref + "</td>\n<td>" + mapHref + "</td>\n<td>")
                 out.append(str(r.__dict__["entries"]) + "</td>\n</tr>")
                 r.__dict__.pop("entries", 1)
 

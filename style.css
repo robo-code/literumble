@@ -57,6 +57,10 @@ td.red {
     border: black 1px solid;
 }
 
+#map {
+    border: black 1px solid;
+}
+
 #distribution2 {
     position: relative;
     height: 170px;
@@ -88,7 +92,7 @@ body.dark td.green {
 body.dark td.red {
 	background-color: #a33b00;
 }
-body.dark #distribution, body.dark #distribution2 {
+body.dark #distribution, body.dark #distribution2, body.dark #map {
 	border-color: #ddd;
 }
 #tip {
