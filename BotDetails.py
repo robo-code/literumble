@@ -10,6 +10,9 @@ import structures
 from structures import global_dict, load_blob
 
 
+_SORT_ATTRS = {"Latest Battle": "LastUpload", "Opponent APS": "OppAPS", "Opponent Survival": "OppSurvival"}
+
+
 def _retired_score(game, name, pairings):
     """A LiteBot for a bot whose RumbleScore row is gone, or None if it never had
     one here. Every field is the same aggregate over live pairings that
@@ -73,8 +76,7 @@ def bot_details():
         order = order[1:]
         reverseSort = False
 
-    if order == "Latest Battle":
-        order = "LastUpload"
+    order = _SORT_ATTRS.get(order, order)
 
     parsetime = time.time() - starttime
 
@@ -196,8 +198,10 @@ def bot_details():
                 "\"survival\"",
                 "\"KNNPBI\"",
                 "\"battles\"",
-                "\"latest\""]
-            escapes = ["\"", "\"", "", "", "", "", "", "", "", "\""]
+                "\"latest\"",
+                "\"oppAPS\"",
+                "\"oppSurvival\""]
+            escapes = ["\"", "\"", "", "", "", "", "", "", "", "\"", "", ""]
             count = 0
             for b in bots:
                 count += 1
@@ -214,7 +218,8 @@ def bot_details():
                          b.NPP,
                          b.Survival,
                          b.KNNPBI,
-                         b.Battles, b.LastUpload]
+                         b.Battles, b.LastUpload,
+                         float(b.OppAPS), float(b.OppSurvival)]
 
                 outs.append("    {")
                 for i in range(len(cells)):
@@ -230,8 +235,7 @@ def bot_details():
         return Response("".join(outs), mimetype="application/json")
 
     sorttime = time.time() - retrievetime - parsetime - starttime
-    if order == "LastUpload":
-        order = "Latest Battle"
+    order = {v: k for k, v in _SORT_ATTRS.items()}.get(order, order)
 
     out = []
 

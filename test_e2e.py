@@ -110,12 +110,16 @@ def main():
     upload("Alpha", "Charlie", 55, 45)
     upload("Bravo", "Charlie", 52, 48)
     background.drain()
-    # WHEN Alpha and Bravo are compared
-    cmp_html = client.get(
-        "/BotCompare?game=%s&bota=Alpha&botb=Bravo" % GAME).get_data(as_text=True)
-    # THEN all three bots show up in the comparison
-    for n in ("Alpha", "Bravo", "Charlie"):
-        assert n in cmp_html, "BotCompare missing %s" % n
+    # WHEN the comparison page loads both bots' details
+    page = client.get("/BotCompare?game=%s&bota=Alpha&botb=Bravo" % GAME).get_data(as_text=True)
+    assert "BotDetails?api=1" in page, page[:200]
+    a, b = (json.loads(client.get("/BotDetails?api=1&game=%s&name=%s" % (GAME, n)).get_data(as_text=True))
+            for n in ("Alpha", "Bravo"))
+    # THEN Charlie is a common opponent, carrying its own rumble score
+    common = {p["name"] for p in a["pairingsList"]} & {p["name"] for p in b["pairingsList"]}
+    assert "Charlie" in common, common
+    charlie = [p for p in a["pairingsList"] if p["name"] == "Charlie"][0]
+    assert 0 <= charlie["oppAPS"] <= 100 and 0 <= charlie["oppSurvival"] <= 100, charlie
 
     # === Scenario: the server recommends a priority battle ===
     # GIVEN all three bots are paired and one pairing has zero sample variance
@@ -180,13 +184,13 @@ def main():
     # GIVEN Delta is retired but both it and Alpha fought Charlie
     # WHEN Delta's name is entered on the comparison page
     cmp_retired = client.get(
-        "/BotCompare?game=%s&bota=Alpha&botb=Delta 1.0" % GAME).get_data(as_text=True)
-    # THEN the comparison renders against their shared opponent
+        "/BotDetails?api=1&game=%s&name=Delta%%201.0" % GAME).get_data(as_text=True)
+    # THEN its details load with their shared opponent
     assert "ERROR" not in cmp_retired, cmp_retired[:200]
-    assert "Delta 1.0" in cmp_retired and "Charlie" in cmp_retired, cmp_retired[:400]
+    assert "Charlie" in [p["name"] for p in json.loads(cmp_retired)["pairingsList"]], cmp_retired[:400]
     # AND a name that never fought here is still rejected
     cmp_bogus = client.get(
-        "/BotCompare?game=%s&bota=Alpha&botb=Nope 9.9" % GAME).get_data(as_text=True)
+        "/BotDetails?api=1&game=%s&name=Nope%%209.9" % GAME).get_data(as_text=True)
     assert "ERROR" in cmp_bogus, cmp_bogus[:200]
 
     # === Scenario: a retired bot keeps its details page ===

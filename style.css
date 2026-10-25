@@ -57,7 +57,7 @@ td.red {
     border: black 1px solid;
 }
 
-#map {
+#map, canvas.chart {
     border: black 1px solid;
 }
 
@@ -92,7 +92,7 @@ body.dark td.green {
 body.dark td.red {
 	background-color: #a33b00;
 }
-body.dark #distribution, body.dark #distribution2, body.dark #map {
+body.dark #distribution, body.dark #distribution2, body.dark #map, body.dark canvas.chart {
 	border-color: #ddd;
 }
 #tip {

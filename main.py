@@ -7,7 +7,6 @@ from flask_compress import Compress
 from google.appengine.api import wrap_wsgi_app
 
 import BatchRankings
-import BotCompare
 import BotDetails
 import ClusterMap
 import FetchParseFlags
@@ -76,9 +75,6 @@ def block_scrapers():
     ua = (request.headers.get("User-Agent") or "").lower()
     if any(bot in ua for bot in BLOCKED_USER_AGENTS):
         abort(410)
-    # BotCompare is O(n^2) and disallowed in robots.txt
-    if request.path == "/BotCompare" and "bot" in ua:
-        abort(410)
 
 
 app.add_url_rule("/", view_func=RumbleSelect.rumble_select, methods=["GET"])
@@ -86,7 +82,6 @@ app.add_url_rule("/RumbleSelect", view_func=RumbleSelect.rumble_select, methods=
 app.add_url_rule("/Rankings", view_func=Rankings.rankings, methods=["GET"])
 app.add_url_rule("/RatingsFile", view_func=RatingsFile.ratings_file, methods=["GET"])
 app.add_url_rule("/BotDetails", view_func=BotDetails.bot_details, methods=["GET"])
-app.add_url_rule("/BotCompare", view_func=BotCompare.bot_compare, methods=["GET"])
 app.add_url_rule("/ClusterMap", view_func=ClusterMap.cluster_map, methods=["GET"])
 app.add_url_rule("/RumbleStats", view_func=RumbleStats.rumble_stats, methods=["GET"])
 app.add_url_rule("/UploadedResults", view_func=UploadedResults.uploaded_results, methods=["POST"])

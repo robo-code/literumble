@@ -43,6 +43,7 @@ _STATIC = {
     "/robots.txt": "robots.txt",
     "/favicon.ico": "favicon.ico",
     "/ScoreExplanation": "ScoreExplanation.html",
+    "/BotCompare": "BotCompare.html",
     "/googlea1fa86d6b3ddcb15.html": "googlea1fa86d6b3ddcb15.html",
 }
 for _route, _fname in _STATIC.items():

@@ -76,24 +76,6 @@ allowed_versions = ["1"]
 
 global_dict = {}
 
-class ComparePair:
-    def __init__ (self, bota, botb, oppAPS, oppSurvival):
-        self.Name = bota.Name
-        self.A_APS = bota.APS
-        self.B_APS = botb.APS
-        self.A_Survival = bota.Survival
-        self.B_Survival = botb.Survival
-        self.Diff_APS = self.A_APS - self.B_APS
-        self.Diff_Survival = self.A_Survival - self.B_Survival
-        self.A_Battles = bota.Battles
-        self.B_Battles = botb.Battles
-        self.A_LastUpload = bota.LastUpload
-        self.B_LastUpload = botb.LastUpload
-        self.A_Var = getattr(bota, "Var_APS", -1.0)
-        self.B_Var = getattr(botb, "Var_APS", -1.0)
-        self.Opponent_APS = oppAPS
-        self.Opponent_Survival = oppSurvival
-
 class ScoreSet:
     def __init__ (self, name = "", aps = 0.0, min_aps = 100.0, survival = 0.0, battles = 0, lastUpload = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")):
         self.Name = name

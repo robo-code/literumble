@@ -1,0 +1,164 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>LiteRumble - Bot Compare</title><link rel="stylesheet" type="text/css" media="all" href="style.css" /></head><body><h3 id="title">Loading...</h3>
+<div id="main"></div>
+<div id="tip" style="position:fixed;padding:1px 4px;font-size:12px;pointer-events:none;display:none"></div>
+<script>
+(function() {
+  var q = new URLSearchParams(location.search);
+  var game = q.get('game'), botaName = q.get('bota'), botbName = q.get('botb');
+  var lim = parseInt(q.get('limit') || '10000000', 10);
+  var dark = q.get('theme') === 'dark';
+  if (dark) document.body.classList.add('dark');
+  var extra = dark ? '&theme=dark' : '';
+  var title = document.getElementById('title'), main = document.getElementById('main'), tip = document.getElementById('tip');
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; }); }
+  function f2(v) { return v.toFixed(2); }
+  function details(name) { return 'BotDetails?game=' + encodeURIComponent(game) + '&name=' + encodeURIComponent(name) + extra; }
+  function link(name) { return '<a href="' + esc(details(name)) + '">' + esc(name) + '</a>'; }
+  function flag(f) { return '<img id="flag" src="/flags/' + esc(f) + '.gif">'; }
+
+  if (!game || !botaName || !botbName) { title.textContent = 'ERROR: specify game=____&bota=____&botb=____'; return; }
+  document.title = 'LiteRumble - ' + game;
+
+  function load(name) {
+    return fetch('BotDetails?api=1&game=' + encodeURIComponent(game) + '&name=' + encodeURIComponent(name))
+      .then(function(r) { return r.text(); })
+      .then(function(t) { try { return JSON.parse(t); } catch (e) { throw new Error(t.slice(0, 300)); } });
+  }
+
+  Promise.all([load(botaName), load(botbName)]).then(function(ab) { render(ab[0], ab[1]); },
+    function(e) { title.textContent = e.message; });
+
+  function render(a, b) {
+    var bOf = {};
+    b.pairingsList.forEach(function(p) { bOf[p.name] = p; });
+    var rows = [];
+    a.pairingsList.forEach(function(pa) {
+      var pb = bOf[pa.name];
+      if (!pb) return;
+      rows.push({name: pa.name, flag: pa.flag, A_APS: pa.APS, A_Survival: pa.survival, B_APS: pb.APS, B_Survival: pb.survival,
+                 Diff_APS: pa.APS - pb.APS, Diff_Survival: pa.survival - pb.survival,
+                 Opponent_APS: pa.oppAPS, Opponent_Survival: pa.oppSurvival, a: pa, b: pb});
+    });
+    var K = rows.length;
+
+    function common(side) {
+      var aps = 0, surv = 0, wins = 0, battles = 0, latest = '', varSum = 0, varCount = 0;
+      rows.forEach(function(r) {
+        var p = r[side];
+        aps += p.APS; surv += p.survival; battles += p.battles;
+        if (p.APS >= 50) wins++;
+        if (p.latest > latest) latest = p.latest;
+        if (p.APS_CI >= 0) { varSum += Math.pow(p.APS_CI / 1.96, 2); varCount++; }
+      });
+      var n = K || 1;
+      return {aps: aps / n, surv: surv / n, pwin: 100 * wins / n, battles: battles, latest: latest || 'None',
+              se2: K && varCount ? varSum / (K * varCount) : null};
+    }
+    var ca = common('a'), cb = common('b');
+    function ci(c) { return c.se2 === null ? 'n/a' : '&plusmn;' + f2(1.96 * Math.sqrt(c.se2)); }
+    var verdict = 'n/a';
+    if (ca.se2 !== null && cb.se2 !== null) {
+      var diff = ca.aps - cb.aps, se = Math.sqrt(ca.se2 + cb.se2), lo = diff - 1.96 * se, hi = diff + 1.96 * se;
+      var ciTxt = ' (CI ' + f2(lo) + ' to ' + f2(hi) + ')';
+      verdict = lo > 0 ? '<b>' + esc(botaName) + '</b> +' + f2(diff) + ciTxt
+              : hi < 0 ? '<b>' + esc(botbName) + '</b> +' + f2(-diff) + ciTxt
+              : 'Tie: diff ' + f2(diff) + ciTxt;
+    }
+
+    title.innerHTML = 'Bot details of <b>' + esc(botaName) + ' vs. ' + esc(botbName) + '</b> in <a href="Rankings?game='
+      + esc(encodeURIComponent(game) + extra) + '">' + esc(game) + '</a> vs. ' + K + ' bots.';
+
+    var h = [];
+    h.push('<table><tr><th>Name</th><td>' + link(botaName) + '</td><td>' + link(botbName) + '</td><th>APS Diff</th><th>Survival Diff</th></tr>');
+    h.push('<tr><th>Flag</th><td>' + flag(a.flag) + '  ' + esc(a.flag) + '</td><td>' + flag(b.flag) + '  ' + esc(b.flag) + '</td>');
+    h.push('<td rowspan="9"><canvas id="diffAPS" width="231" height="231" class="chart"></canvas></td>');
+    h.push('<td rowspan="9"><canvas id="diffSurvival" width="231" height="231" class="chart"></canvas></td></tr>');
+    function row(label, va, vb) { h.push('<tr><th>' + label + '</th><td>' + va + '</td><td>' + vb + '</td></tr>'); }
+    function wide(label, v) { h.push('<tr><th>' + label + '</th><td colspan="2" align="center">' + v + '</td></tr>'); }
+    row('Common APS', f2(ca.aps), f2(cb.aps));
+    row('Common Survival', f2(ca.surv), f2(cb.surv));
+    row('Common PWin', f2(ca.pwin), f2(cb.pwin));
+    row('Common Battles', ca.battles, cb.battles);
+    row('Common Last Upload', esc(ca.latest), esc(cb.latest));
+    wide('Common Pairings', K);
+    row('Common APS 95% CI', ci(ca), ci(cb));
+    wide('Statistical Comparison', verdict);
+    h.push('</table><br><table id="pairs"></table>');
+    main.innerHTML = h.join('');
+
+    var cols = [
+      ['  ', 'name'], ['Flag', 'flag'], ['Name', 'name'],
+      ['APS (A)', 'A_APS', 40, 60], ['Survival (A)', 'A_Survival', 40, 60],
+      ['APS (B)', 'B_APS', 40, 60], ['Survival (B)', 'B_Survival', 40, 60],
+      ['Diff APS', 'Diff_APS', -0.1, 0.1], ['Diff Survival', 'Diff_Survival', -5, 5],
+      ['Opponent APS', 'Opponent_APS', 40, 60], ['Opponent Survival', 'Opponent_Survival', 40, 60]];
+    var order = (q.get('order') || '').trim(), desc = true;
+    if (!order) { order = 'Name'; desc = false; }
+    else if (order[0] === '-') { order = order.slice(1); desc = false; }
+    if (order === 'Latest Battle') order = 'Name';
+
+    function drawTable() {
+      var col = cols.filter(function(c) { return c[0] === order; })[0] || cols[2], key = col[1];
+      rows.sort(function(x, y) { var u = x[key], v = y[key], c = u < v ? -1 : u > v ? 1 : 0; return desc ? -c : c; });
+      var t = ['<tr><td colspan="3"></td><th colspan="2">' + esc(botaName) + '</th><th colspan="2">' + esc(botbName) + '</th><td colspan="4"></td></tr><tr class="dim">'];
+      cols.forEach(function(c, i) {
+        var sorted = c[0] === order;
+        t.push('<th' + (sorted ? ' class="sortedby"' : '') + '><a href="#" data-col="' + i + '">' + (sorted && desc ? '-' : '') + esc(c[0]) + '</a></th>');
+      });
+      t.push('</tr>');
+      rows.slice(0, lim).forEach(function(r, n) {
+        t.push('<tr><td>' + (n + 1) + '</td><td>' + flag(r.flag) + '</td><td>' + link(r.name) + '</td>');
+        cols.slice(3).forEach(function(c) {
+          var v = r[c[1]], cls = v < c[2] ? ' class="red"' : v > c[3] ? ' class="green"' : '';
+          t.push('<td' + cls + '>' + f2(v) + '</td>');
+        });
+        t.push('</tr>');
+      });
+      document.getElementById('pairs').innerHTML = t.join('');
+    }
+    document.getElementById('pairs').onclick = function(e) {
+      var el = e.target.closest('a[data-col]');
+      if (!el) return;
+      e.preventDefault();
+      var name = cols[+el.getAttribute('data-col')][0];
+      desc = name === order ? !desc : false;
+      order = name;
+      q.set('order', (desc ? '' : '-') + order);
+      history.replaceState(null, '', '?' + q.toString());
+      drawTable();
+    };
+    drawTable();
+
+    var S = 230;
+    function draw(id, dkey, xkey, color) {
+      var canvas = document.getElementById(id), ctx = canvas.getContext('2d'), names = {};
+      ctx.fillStyle = dark ? '#1e1e1e' : '#fff';
+      ctx.fillRect(0, 0, S + 1, S + 1);
+      ctx.fillStyle = dark ? '#555' : '#7f7f7f';
+      ctx.fillRect(0, 115, S + 1, 1);
+      ctx.fillStyle = color;
+      rows.forEach(function(r) {
+        var px = Math.round(r[xkey] * 0.01 * S);
+        var py = Math.max(0, Math.min(S, S - Math.round((r[dkey] + 50) * 0.01 * S)));
+        ctx.beginPath(); ctx.arc(px, py, 1.5, 0, 6.283); ctx.fill();
+        names[py * (S + 1) + px] = r.name;
+      });
+      canvas.onmousemove = function(e) {
+        var rc = canvas.getBoundingClientRect(), mx = Math.floor(e.clientX - rc.left), my = Math.floor(e.clientY - rc.top);
+        var best = '', bestD = 26;
+        for (var dy = -5; dy <= 5; dy++) for (var dx = -5; dx <= 5; dx++) {
+          var d = dx * dx + dy * dy;
+          if (d < bestD) { var n = names[(my + dy) * (S + 1) + (mx + dx)]; if (n) { best = n; bestD = d; } }
+        }
+        if (best) { tip.textContent = best; tip.style.left = e.clientX + 12 + 'px'; tip.style.top = e.clientY + 2 + 'px'; tip.style.display = ''; }
+        else tip.style.display = 'none';
+      };
+      canvas.onmouseleave = function() { tip.style.display = 'none'; };
+    }
+    draw('diffAPS', 'Diff_APS', 'Opponent_APS', dark ? 'rgba(255,100,100,0.5)' : 'rgba(204,37,41,0.4)');
+    draw('diffSurvival', 'Diff_Survival', 'Opponent_Survival', dark ? 'rgba(100,220,130,0.5)' : 'rgba(62,150,81,0.4)');
+  }
+})();
+</script>
+</body></html>
