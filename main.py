@@ -9,6 +9,7 @@ from google.appengine.api import wrap_wsgi_app
 import BatchRankings
 import BotCompare
 import BotDetails
+import ClusterMap
 import FetchParseFlags
 import HandleQueuedResults
 import Rankings
@@ -86,6 +87,7 @@ app.add_url_rule("/Rankings", view_func=Rankings.rankings, methods=["GET"])
 app.add_url_rule("/RatingsFile", view_func=RatingsFile.ratings_file, methods=["GET"])
 app.add_url_rule("/BotDetails", view_func=BotDetails.bot_details, methods=["GET"])
 app.add_url_rule("/BotCompare", view_func=BotCompare.bot_compare, methods=["GET"])
+app.add_url_rule("/ClusterMap", view_func=ClusterMap.cluster_map, methods=["GET"])
 app.add_url_rule("/RumbleStats", view_func=RumbleStats.rumble_stats, methods=["GET"])
 app.add_url_rule("/UploadedResults", view_func=UploadedResults.uploaded_results, methods=["POST"])
 

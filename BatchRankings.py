@@ -9,6 +9,7 @@ from flask import request
 from google.appengine.api import taskqueue
 from google.appengine.ext import db
 
+import ClusterMap
 import store
 import structures
 
@@ -71,7 +72,7 @@ def batch_rankings():
             APSs = numpy.empty([botlen, botlen])
             APSs.fill(numpy.nan)
             # one row per pair; each side is (me, opp); alive = both still in the rumble
-            rowid, lo, hi, aps_lo, battles, var_aps, *derived = store.load_pair_table(r.Name, botIndexes)
+            rowid, lo, hi, aps_lo, battles, var_aps, surv_lo, surv_hi, *derived = store.load_pair_table(r.Name, botIndexes)
             alive = (lo >= 0) & (hi >= 0)
             sides = ((lo, hi), (hi, lo))
             APSs[hi[alive], lo[alive]] = aps_lo[alive]
@@ -82,6 +83,21 @@ def batch_rankings():
             totalAlivePairs = int(pairCounts.sum())
 
             numpy.fill_diagonal(APSs, numpy.nan)
+
+            # optional extra: a failure here must not lose the rankings below
+            try:
+                pair = alive & (lo != hi)
+                SURVs = numpy.full_like(APSs, numpy.nan)
+                SURVs[hi[pair], lo[pair]] = surv_lo[pair]
+                SURVs[lo[pair], hi[pair]] = surv_hi[pair]
+                VARs = numpy.full_like(APSs, numpy.nan)
+                pair &= var_aps >= 0
+                VARs[hi[pair], lo[pair]] = VARs[lo[pair], hi[pair]] = var_aps[pair]
+                coords = ClusterMap.spectral_embed(APSs, SURVs, VARs)
+                SURVs = VARs = None
+                store.save_cluster_map(r.Name, {b.Name: c for b, c in zip(bots, coords)})
+            except Exception:
+                logging.exception("cluster map failed for " + r.Name)
 
             logging.info(str(len(bots)) + " bots loaded, total of " + str(totalAlivePairs) + " alive pairings")
 

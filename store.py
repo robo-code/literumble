@@ -44,6 +44,8 @@ def _con():
                     bd_battles INTEGER, bd_lo REAL, bd_hi REAL,
                     PRIMARY KEY (rumble, lo, hi));
                 CREATE INDEX IF NOT EXISTS Pairing_hi ON Pairing (rumble, hi);
+                CREATE TABLE IF NOT EXISTS ClusterMap (
+                    rumble TEXT PRIMARY KEY, data TEXT);  -- {name: [x, y]}
                 """)
             have = {r[1] for r in con.execute("PRAGMA table_info(Pairing)")}
             for col, typ in (("bd_battles", "INTEGER"), ("bd_lo", "REAL"), ("bd_hi", "REAL")):
@@ -79,6 +81,11 @@ def load_scores(rumble):
         "active,anpp,aps_ci,uploaders FROM RumbleScore WHERE rumble=?",
         (rumble,)).fetchall()
     return {r[0]: _row_to_litebot(rumble, r) for r in rows}
+
+
+def load_aps(rumble):
+    """``{name: aps}`` for a rumble."""
+    return dict(_con().execute("SELECT name,aps FROM RumbleScore WHERE rumble=?", (rumble,)))
 
 
 def load_score(rumble, name):
@@ -272,13 +279,13 @@ DEAD_KNNPBI, DEAD_NPP = 0.0, -1.0
 
 def load_pair_table(rumble, index):
     """The Pairing rows of ``rumble`` BatchRankings must look at, as numpy columns:
-    rowid, lo, hi, aps_lo, battles, var_aps, then DERIVED_COLS. lo/hi come back as
+    rowid, lo, hi, aps_lo, battles, var_aps, surv_lo, surv_hi, then DERIVED_COLS. lo/hi come back as
     ``index[name]`` (-1 if absent), NULL as NaN. Rows against retired bots whose
     current side already reads DEAD_* are skipped."""
     cur = _con().execute(
-        "SELECT rowid,lo,hi,aps_lo,battles,var_aps," + ",".join(DERIVED_COLS) +
+        "SELECT rowid,lo,hi,aps_lo,battles,var_aps,surv_lo,surv_hi," + ",".join(DERIVED_COLS) +
         " FROM Pairing WHERE rumble=?", (rumble,))
-    chunks = [[numpy.empty(0, int)] * 3 + [numpy.empty(0)] * 7]
+    chunks = [[numpy.empty(0, int)] * 3 + [numpy.empty(0)] * 9]
     while True:
         rows = cur.fetchmany(100000)
         if not rows:
@@ -287,7 +294,7 @@ def load_pair_table(rumble, index):
         lo = numpy.array([index.get(n, -1) for n in lo], int)
         hi = numpy.array([index.get(n, -1) for n in hi], int)
         rest = [numpy.array(c, float) for c in rest]
-        kl, kh, nl, nh = rest[3:]
+        kl, kh, nl, nh = rest[-4:]
         keep = (((lo >= 0) & (hi >= 0)) | ((lo >= 0) & ((kl != DEAD_KNNPBI) | (nl != DEAD_NPP)))
                 | ((hi >= 0) & ((kh != DEAD_KNNPBI) | (nh != DEAD_NPP))))
         chunks.append([c[keep] for c in [numpy.array(rid), lo, hi] + rest])
@@ -313,3 +320,17 @@ def has_history(rumble, name):
         "UNION ALL SELECT 1 FROM Pairing WHERE rumble=? AND hi=? LIMIT 1",
         (rumble, name, rumble, name)).fetchone() is not None
 
+
+# ---- cluster map: one JSON blob per rumble, written by BatchRankings ------
+
+def save_cluster_map(rumble, data):
+    con = _con()
+    with gae_shim.write(con):
+        con.execute("INSERT OR REPLACE INTO ClusterMap (rumble,data) VALUES (?,?)",
+                    (rumble, json.dumps(data)))
+
+
+def load_cluster_map(rumble):
+    row = _con().execute("SELECT data FROM ClusterMap WHERE rumble=?",
+                         (rumble,)).fetchone()
+    return json.loads(row[0]) if row else {}
