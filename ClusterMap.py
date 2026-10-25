@@ -135,6 +135,7 @@ def cluster_map():
         out.append("No cluster map yet; it is computed by the batch rankings.</body></html>")
         return "".join(out)
     out.append("""<p>t-SNE on bot score similarities. Nearby bots have similar strengths and weaknesses. Colour is APS; click a dot for details.</p>
+<p><input id="find" list="bots" placeholder="Find a bot" size="40" autocomplete="off"><datalist id="bots"></datalist></p>
 <canvas id="map" width="700" height="700" style="max-width: 100%; cursor: pointer;"></canvas>
 <div style="display:flex;align-items:center;gap:6px;font-size:12px;max-width:700px">
 <span id="lo"></span><div id="legend" style="flex:1;height:10px"></div><span id="hi"></span> APS</div>
@@ -166,15 +167,26 @@ and t-SNE then arranges this network in 2D, keeping linked bots close together.<
     var a = hex(PL[i]), b = hex(PL[i + 1]);
     return 'rgb(' + a.map(function(v, k) { return Math.round(v + (b[k] - v) * u); }).join(',') + ')';
   }
-  ctx.fillStyle = dark ? '#1e1e1e' : '#fff';
-  ctx.fillRect(0, 0, S, S);
   var px = P.map(function(p) {
-    var x = M + (p[1] - rx[0]) / (rx[1] - rx[0] || 1) * (S - 2 * M);
-    var y = S - M - (p[2] - ry[0]) / (ry[1] - ry[0] || 1) * (S - 2 * M);
-    ctx.fillStyle = plasma((p[3] - ra[0]) / (ra[1] - ra[0] || 1));
-    ctx.beginPath(); ctx.arc(x, y, 3, 0, 6.283); ctx.fill();
-    return [x, y];
+    return [M + (p[1] - rx[0]) / (rx[1] - rx[0] || 1) * (S - 2 * M),
+            S - M - (p[2] - ry[0]) / (ry[1] - ry[0] || 1) * (S - 2 * M),
+            plasma((p[3] - ra[0]) / (ra[1] - ra[0] || 1))];
   });
+  function draw(sel) {
+    ctx.fillStyle = dark ? '#1e1e1e' : '#fff';
+    ctx.fillRect(0, 0, S, S);
+    px.forEach(function(q) { ctx.fillStyle = q[2]; ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, 6.283); ctx.fill(); });
+    if (sel < 0) return;
+    ctx.strokeStyle = dark ? '#fff' : '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(px[sel][0], px[sel][1], 8, 0, 6.283); ctx.stroke();
+  }
+  draw(-1);
+  var find = document.getElementById('find'), list = document.getElementById('bots'), index = {};
+  P.map(function(p, i) { index[p[0]] = i; return p[0]; }).sort().forEach(function(n) {
+    var o = document.createElement('option'); o.value = n; list.appendChild(o);
+  });
+  find.oninput = function() { draw(find.value in index ? index[find.value] : -1); };
   function nearest(e) {
     var r = canvas.getBoundingClientRect(), sc = S / r.width;
     var mx = (e.clientX - r.left) * sc, my = (e.clientY - r.top) * sc, best = -1, bestD = 36;
