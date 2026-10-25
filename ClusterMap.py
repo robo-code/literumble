@@ -119,10 +119,17 @@ def cluster_map():
     if not points:
         out.append("No cluster map yet; it is computed by the batch rankings.</body></html>")
         return "".join(out)
-    out.append("""<p>Nearby bots have similar styles, whatever their strength. Colour is APS; click a dot for details.</p>
+    out.append("""<p>t-SNE on bot score similarities. Nearby bots have similar strengths and weaknesses. Colour is APS; click a dot for details.</p>
 <canvas id="map" width="700" height="700" style="max-width: 100%; cursor: pointer;"></canvas>
 <div style="display:flex;align-items:center;gap:6px;font-size:12px;max-width:700px">
 <span id="lo"></span><div id="legend" style="flex:1;height:10px"></div><span id="hi"></span> APS</div>
+<div style="max-width:700px">
+<p>For every matchup, we compare a bot's actual score with the score expected from the two bots' overall strength.
+The difference shows which opponents a bot does unusually well or badly against. We do the same for survival, at half weight.</p>
+<p>Two bots count as similar when they do unusually well and unusually badly against the same opponents. Bots whose
+results are about equally consistent get a small extra nudge closer. Each bot is linked to its 10 most similar bots,
+and t-SNE then arranges this network in 2D, keeping linked bots close together.</p>
+</div>
 <div id="tip" style="position:fixed;padding:1px 4px;font-size:12px;pointer-events:none;display:none"></div>
 <script>
 (function() {
