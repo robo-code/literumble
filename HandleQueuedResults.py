@@ -193,6 +193,16 @@ def handle_queued_results():
     apair.Battles += 1
     bpair.Battles = apair.Battles
 
+    # own count: older battles have no bullet damage
+    bulletdamagea, bulletdamageb = results.get("fbulletd"), results.get("sbulletd")
+    if bulletdamagea is not None and bulletdamageb is not None:
+        bdBattles = min(apair.BD_Battles, maxPerPair)
+        inv_bd = 1.0 / (bdBattles + 1.0)
+        apair.BulletDamage = (apair.BulletDamage or 0.0) * bdBattles * inv_bd + float(bulletdamagea) * inv_bd
+        bpair.BulletDamage = (bpair.BulletDamage or 0.0) * bdBattles * inv_bd + float(bulletdamageb) * inv_bd
+        apair.BD_Battles = bdBattles + 1
+        bpair.BD_Battles = apair.BD_Battles
+
     apair.LastUpload = lastUploadStr
     bpair.LastUpload = apair.LastUpload
 

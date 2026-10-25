@@ -34,6 +34,7 @@ def make_battle(fname, sname, fscore, sscore):
         "rounds": "35", "field": "1000x1000", "melee": "NO", "teams": "NO",
         "fname": fname, "sname": sname,
         "fscore": str(fscore), "sscore": str(sscore),
+        "fbulletd": str(fscore // 2), "sbulletd": str(sscore // 2),
         "fsurvival": "35" if fscore >= sscore else "0",
         "ssurvival": "0" if fscore >= sscore else "35",
         "user": "tester", "time": str(int(time.time() * 1000)),

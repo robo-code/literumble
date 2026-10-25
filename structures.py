@@ -101,6 +101,8 @@ class ScoreSet:
         self.NPP = -1
         self.Alive = True
         self.Var_APS = -1.0
+        self.BulletDamage = None  # mean uploaded bullet damage per battle; None = never uploaded
+        self.BD_Battles = 0       # own count: older battles predate recording it
 
 class LiteBot:
     def __init__ (self, bot = None, loadDict = None):

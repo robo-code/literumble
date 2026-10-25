@@ -39,9 +39,14 @@ def _con():
                     min_aps_lo REAL, min_aps_hi REAL,
                     knnpbi_lo REAL, knnpbi_hi REAL,
                     npp_lo REAL, npp_hi REAL,
+                    bd_battles INTEGER, bd_lo REAL, bd_hi REAL,
                     PRIMARY KEY (rumble, lo, hi));
                 CREATE INDEX IF NOT EXISTS Pairing_hi ON Pairing (rumble, hi);
                 """)
+            have = {r[1] for r in con.execute("PRAGMA table_info(Pairing)")}
+            for col, typ in (("bd_battles", "INTEGER"), ("bd_lo", "REAL"), ("bd_hi", "REAL")):
+                if col not in have:  # DBs created before bullet damage was recorded
+                    con.execute("ALTER TABLE Pairing ADD COLUMN " + col + " " + typ)
         _ready = True
     return con
 
@@ -127,8 +132,10 @@ def delete_scores(rumble, names):
 # SELECT column order for load_pairings / _row_to_scoreset
 #  0 lo 1 hi 2 battles 3 var_aps 4 lastupload 5 aps_lo 6 surv_lo 7 surv_hi
 #  8 min_aps_lo 9 min_aps_hi 10 knnpbi_lo 11 knnpbi_hi 12 npp_lo 13 npp_hi
+# 14 bd_battles 15 bd_lo 16 bd_hi
 _PAIR_COLS = ("lo,hi,battles,var_aps,lastupload,aps_lo,surv_lo,surv_hi,"
-              "min_aps_lo,min_aps_hi,knnpbi_lo,knnpbi_hi,npp_lo,npp_hi")
+              "min_aps_lo,min_aps_hi,knnpbi_lo,knnpbi_hi,npp_lo,npp_hi,"
+              "bd_battles,bd_lo,bd_hi")
 _PAIR_SELECT = "SELECT " + _PAIR_COLS + " FROM Pairing"
 
 
@@ -146,11 +153,14 @@ def _row_to_scoreset(botname, row):
     if botname == lo:
         ss.Name = hi
         ss.APS = aps_lo
-        surv, min_aps, knnpbi, npp = row[6], row[8], row[10], row[12]
+        surv, min_aps, knnpbi, npp, bd = row[6], row[8], row[10], row[12], row[15]
     else:
         ss.Name = lo
         ss.APS = 100.0 - aps_lo
-        surv, min_aps, knnpbi, npp = row[7], row[9], row[11], row[13]
+        surv, min_aps, knnpbi, npp, bd = row[7], row[9], row[11], row[13], row[16]
+    ss.BulletDamage = bd
+    if row[14] is not None:
+        ss.BD_Battles = row[14]
     if surv is not None:
         ss.Survival = surv
     if min_aps is not None:
@@ -178,7 +188,7 @@ def load_pairings(rumble, botname):
 
 # join Pairing to the opponent's RumbleScore: same p-side lookups as load_pairings,
 # INNER JOIN so only opponents still in the rumble come back (the "alive" filter is
-# free) and each row carries the opponent's aps/survival (cols 14/15). For the
+# free) and each row carries the opponent's aps/survival (the last two cols). For the
 # display path (BotDetails/BotCompare) -- avoids loading the whole scores dict.
 _pj = ",".join("p." + c for c in _PAIR_COLS.split(","))
 _ALIVE_SELECT = (
@@ -200,7 +210,7 @@ def load_pairings_alive(rumble, botname):
     for r in con.execute(_ALIVE_SELECT, (rumble, botname, rumble, botname)):
         ss = _row_to_scoreset(botname, r)
         ss.Alive = True
-        ss.OppAPS, ss.OppSurvival = r[14], r[15]
+        ss.OppAPS, ss.OppSurvival = r[-2], r[-1]
         out.append(ss)
     return out
 
@@ -216,20 +226,24 @@ def _put_side(con, rumble, botname, ss):
     else:
         lo, hi, side = opp, botname, "hi"
         aps_lo = 100.0 - float(ss.APS)
+    bd = getattr(ss, "BulletDamage", None)
     shared = (int(ss.Battles), float(getattr(ss, "Var_APS", -1.0)),
-              ss.LastUpload, aps_lo)
+              ss.LastUpload, aps_lo, int(getattr(ss, "BD_Battles", 0)))
     dirvals = (float(getattr(ss, "Survival", 0.0)),
                float(getattr(ss, "Min_APS", 100.0)),
                float(getattr(ss, "KNNPBI", 0.0)),
-               float(getattr(ss, "NPP", -1.0)))
+               float(getattr(ss, "NPP", -1.0)),
+               None if bd is None else float(bd))
     con.execute(
-        "INSERT INTO Pairing (rumble,lo,hi,battles,var_aps,lastupload,aps_lo,"
-        "surv_{s},min_aps_{s},knnpbi_{s},npp_{s}) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
+        "INSERT INTO Pairing (rumble,lo,hi,battles,var_aps,lastupload,aps_lo,bd_battles,"
+        "surv_{s},min_aps_{s},knnpbi_{s},npp_{s},bd_{s}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(rumble,lo,hi) DO UPDATE SET "
         "battles=excluded.battles,var_aps=excluded.var_aps,"
         "lastupload=excluded.lastupload,aps_lo=excluded.aps_lo,"
+        "bd_battles=excluded.bd_battles,"
         "surv_{s}=excluded.surv_{s},min_aps_{s}=excluded.min_aps_{s},"
-        "knnpbi_{s}=excluded.knnpbi_{s},npp_{s}=excluded.npp_{s}".format(s=side),
+        "knnpbi_{s}=excluded.knnpbi_{s},npp_{s}=excluded.npp_{s},"
+        "bd_{s}=excluded.bd_{s}".format(s=side),
         (rumble, lo, hi) + shared + dirvals)
 
 
