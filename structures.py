@@ -71,7 +71,7 @@ def load_blob(blob, default):
 total = "TOTAL"
 participants = "PARTICIPANTS"
 sync = "SYNCHRONIZE"
-allowed_clients = ["1.11.2"]
+allowed_clients = ["1.11.2", "1.12.0"]
 allowed_versions = ["1"]
 
 global_dict = {}
@@ -130,6 +130,8 @@ class Rumble(db.Model):
     MeleeSize = db.IntegerProperty(indexed = False)
     Rounds = db.IntegerProperty(indexed = False)
     Field = db.StringProperty(indexed = False)
+    HideNames = db.BooleanProperty(indexed = False, default = False)
+    ClearData = db.BooleanProperty(indexed = False, default = False)
     Name = db.StringProperty(indexed = False) # key_name
     TotalUploads = db.IntegerProperty(indexed = False)
     Participants = db.StringListProperty(indexed = False)
