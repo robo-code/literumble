@@ -19,6 +19,7 @@ os.environ["LITERUMBLE_DB"] = _tmp.name
 
 import wsgi_local  # noqa: E402  (imports gae_shim first, starts background threads)
 import background   # noqa: E402
+import store        # noqa: E402
 import structures   # noqa: E402
 from google.appengine.api import taskqueue  # noqa: E402  (the shim)
 
@@ -28,10 +29,10 @@ client = app.test_client()
 GAME = "TestRumble"
 
 
-def make_battle(fname, sname, fscore, sscore):
+def make_battle(fname, sname, fscore, sscore, game=GAME, settings=""):
     """A minimal valid /UploadedResults body (a 1v1 battle, A-vs-B)."""
     fields = {
-        "client": "1.11.2", "version": "1", "game": GAME,
+        "client": "1.12.0", "version": "1", "game": game,
         "rounds": "35", "field": "1000x1000", "melee": "NO", "teams": "NO",
         "fname": fname, "sname": sname,
         "fscore": str(fscore), "sscore": str(sscore),
@@ -40,15 +41,23 @@ def make_battle(fname, sname, fscore, sscore):
         "ssurvival": "0" if fscore >= sscore else "35",
         "user": "tester", "time": str(int(time.time() * 1000)),
     }
-    return "&".join("%s=%s" % kv for kv in fields.items())
+    return "&".join("%s=%s" % kv for kv in fields.items()) + settings
 
 
-def upload(fname, sname, fscore, sscore):
-    r = client.post("/UploadedResults", data=make_battle(fname, sname, fscore, sscore))
+def upload(fname, sname, fscore, sscore, game=GAME, settings=""):
+    r = client.post("/UploadedResults", data=make_battle(fname, sname, fscore, sscore, game, settings))
     body = r.get_data(as_text=True)
     assert r.status_code == 200 and "OK" in body, (r.status_code, body)
     assert "added to queue" in body, "upload not accepted: " + body
     return body
+
+
+def battles(game):
+    """The battles of the Alpha-Bravo pairing, which unlike a bot's total never drops when an opponent retires."""
+    for pairing in store.load_pairings(game, "Alpha"):
+        if pairing.Name == "Bravo":
+            return int(pairing.Battles)
+    return 0
 
 
 def get_json(path):
@@ -276,6 +285,56 @@ def main():
     # THEN it is rejected, then allowed
     assert without_header == 403, without_header
     assert with_header == 200, with_header
+
+    # === Scenario: a rumble stored before these settings existed has them off ===
+    # GIVEN a stored rumble without the settings
+    # WHEN it is read
+    old = structures.Rumble._from_row("OldRumble", {"Name": "OldRumble"})
+    # THEN both settings are off
+    assert old.HideNames is False and old.ClearData is False, old
+
+    # === Scenario: an upload without the settings works as before ===
+    # GIVEN a rumble with the settings off
+    before = battles(GAME)
+    # WHEN an upload without the settings arrives
+    upload("Alpha", "Bravo", 60, 40)
+    background.drain()
+    # THEN it counts
+    assert battles(GAME) == before + 1, battles(GAME)
+
+    # === Scenario: a rumble with the settings off rejects results with them on ===
+    # GIVEN the same rumble
+    before = battles(GAME)
+    # WHEN uploads with either setting on arrive, the first as the client sends it
+    upload("Alpha", "Bravo", 60, 40, settings="&hidenames=YES\n")
+    upload("Alpha", "Bravo", 60, 40, settings="&cleardata=YES")
+    background.drain()
+    # THEN neither counts
+    assert battles(GAME) == before, battles(GAME)
+
+    # === Scenario: a new rumble takes the settings from its first upload ===
+    # GIVEN no rumble called HiddenRumble
+    # WHEN the first upload has both settings on, as the client sends it
+    both = "&cleardata=YES&hidenames=YES\r\n"
+    upload("Alpha", "Bravo", 60, 40, game="HiddenRumble", settings=both)
+    background.drain()
+    # THEN the rumble has them on, and the battle counts
+    hidden = structures.Rumble.get_by_key_name("HiddenRumble")
+    assert hidden.HideNames is True and hidden.ClearData is True, hidden
+    assert battles("HiddenRumble") == 1, battles("HiddenRumble")
+
+    # === Scenario: a rumble with the settings on only takes results with them on ===
+    # GIVEN that rumble
+    # WHEN uploads with no settings, or only one of them, arrive
+    upload("Alpha", "Bravo", 60, 40, game="HiddenRumble")
+    upload("Alpha", "Bravo", 60, 40, game="HiddenRumble", settings="&hidenames=YES\n")
+    upload("Alpha", "Bravo", 60, 40, game="HiddenRumble", settings="&cleardata=YES")
+    background.drain()
+    # THEN they do not count, but one with both on does
+    assert battles("HiddenRumble") == 1, battles("HiddenRumble")
+    upload("Alpha", "Bravo", 61, 39, game="HiddenRumble", settings=both)
+    background.drain()
+    assert battles("HiddenRumble") == 2, battles("HiddenRumble")
 
     print("test_e2e OK")
 

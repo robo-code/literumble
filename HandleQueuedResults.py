@@ -15,6 +15,11 @@ import store
 import structures
 from structures import global_dict, load_blob
 
+def upload_setting(results, key):
+    # An upload without the setting means it is off. The client ends each upload
+    # with a line break, which stays on the last field.
+    return results.get(key, "").strip() == "YES"
+
 def handle_queued_results():
     out = []
     results = json.loads(request.get_data(as_text=True))
@@ -44,6 +49,8 @@ def handle_queued_results():
             Name=rumble, Rounds=int(results["rounds"]),
             Field=results["field"], Melee=results["melee"] == "YES",
             Teams=results["teams"] == "YES", TotalUploads=0,
+            HideNames=upload_setting(results, "hidenames"),
+            ClearData=upload_setting(results, "cleardata"),
             MeleeSize=10)
         out.append("CREATED NEW GAME TYPE " + rumble + "\n")
         logging.info("Created new game type: " + rumble)
@@ -52,7 +59,9 @@ def handle_queued_results():
         rounds = (game.Rounds == int(results["rounds"]))
         teams = game.Teams == (results["teams"] == "YES")
         melee = game.Melee == (results["melee"] == "YES")
-        allowed = field and rounds and teams and melee
+        hidenames = game.HideNames == upload_setting(results, "hidenames")
+        cleardata = game.ClearData == upload_setting(results, "cleardata")
+        allowed = field and rounds and teams and melee and hidenames and cleardata
         if not allowed:
             errstr = "OK. ERROR. Incorrect " + rumble + " config: "
             errorReasons = []
@@ -64,6 +73,10 @@ def handle_queued_results():
                 errorReasons.append("teams ")
             if not melee:
                 errorReasons.append("melee ")
+            if not hidenames:
+                errorReasons.append("hidenames ")
+            if not cleardata:
+                errorReasons.append("cleardata ")
             logging.error(errstr + ", ".join(errorReasons) + "  User: " + results["user"])
             return "".join(out)
 
