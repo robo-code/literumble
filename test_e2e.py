@@ -30,7 +30,7 @@ GAME = "TestRumble"
 def make_battle(fname, sname, fscore, sscore):
     """A minimal valid /UploadedResults body (a 1v1 battle, A-vs-B)."""
     fields = {
-        "client": "1.11.1", "version": "1", "game": GAME,
+        "client": "1.11.2", "version": "1", "game": GAME,
         "rounds": "35", "field": "1000x1000", "melee": "NO", "teams": "NO",
         "fname": fname, "sname": sname,
         "fscore": str(fscore), "sscore": str(sscore),
