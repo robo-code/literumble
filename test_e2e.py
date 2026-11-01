@@ -5,6 +5,7 @@ the right data via the ``api=1`` JSON. Run: ``python test_e2e.py`` (exit != 0 on
 failure). In-process via Flask's test client -- no sockets, no sleeping.
 """
 import json
+import logging
 import os
 import re
 import subprocess
@@ -302,6 +303,8 @@ def main():
     # THEN it counts
     assert battles(GAME) == before + 1, battles(GAME)
 
+    # The rejected uploads below log an expected config-mismatch error each.
+    logging.disable(logging.ERROR)
     # === Scenario: a rumble with the settings off rejects results with them on ===
     # GIVEN the same rumble
     before = battles(GAME)
@@ -335,6 +338,7 @@ def main():
     upload("Alpha", "Bravo", 61, 39, game="HiddenRumble", settings=both)
     background.drain()
     assert battles("HiddenRumble") == 2, battles("HiddenRumble")
+    logging.disable(logging.NOTSET)
 
     print("test_e2e OK")
 
