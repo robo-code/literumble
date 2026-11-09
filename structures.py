@@ -71,7 +71,7 @@ def load_blob(blob, default):
 total = "TOTAL"
 participants = "PARTICIPANTS"
 sync = "SYNCHRONIZE"
-allowed_clients = ["1.11.2", "1.12.0"]
+allowed_clients = ["1.12.0"]
 allowed_versions = ["1"]
 
 global_dict = {}
